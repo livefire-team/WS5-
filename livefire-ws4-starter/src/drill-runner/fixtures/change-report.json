@@ -1,0 +1,19 @@
+{
+  "drill_id": "drill-fixture",
+  "attempt": 1,
+  "branch": "candidate/drill-fixture-1",
+  "commits": ["0000000aaaaa"],
+  "changed_paths": [
+    "src/order-service/app/secret_provider.py",
+    "src/order-service/tests/test_secret_recovery.py",
+    "runbooks/order-service-keyvault-recovery.md"
+  ],
+  "regression_test_path": "src/order-service/tests/test_secret_recovery.py",
+  "runbook_path": "runbooks/order-service-keyvault-recovery.md",
+  "evidence_to_change": [
+    {"change": "Failed reads are retried with bounded backoff and never cached", "evidence_ref": "after-restore", "acceptance_criterion": "After access is restored, the next order succeeds without restarting the app"},
+    {"change": "Regression test reproduces the cached failure", "evidence_ref": "src/order-service/app/secret_provider.py", "acceptance_criterion": "A regression test fails on the current code and passes on the candidate"},
+    {"change": "Runbook step: run the customer journey after restoring access", "evidence_ref": "RB-KV-1", "acceptance_criterion": "The runbook adds a customer-journey check after any access restore"}
+  ],
+  "notes": ""
+}

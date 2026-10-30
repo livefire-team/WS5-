@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ drill_id }} · LiveFire Fusion{% endblock %}
+{% block body %}
+<div id="drill" data-drill="{{ drill_id }}" data-mode="{{ mode }}" data-speed="{{ speed }}">
+  <section class="drillbar">
+    <div><span class="quiet">Drill</span> <code>{{ drill_id }}</code>
+      {% if mode == 'replay' %}<span class="badge replay">Replay ×{{ speed|round(1) }}</span>{% else %}<span class="badge live">Live</span>{% endif %}
+    </div>
+    <button id="kill" class="danger" {% if mode == 'replay' %}disabled{% endif %}>Kill switch</button>
+  </section>
+
+  <ol id="stages" class="stages" aria-label="Drill stages"></ol>
+
+  <section id="banner" class="banner" role="status" aria-live="polite">Connecting…</section>
+
+  <section class="split">
+    <div id="infra" class="tile"><h2>Infrastructure health</h2><p class="state">—</p><p class="hint">What dashboards show</p></div>
+    <div id="customer" class="tile"><h2>Customer journey</h2><p class="state">—</p><p class="hint">What the independent referee sees</p></div>
+  </section>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section id="approval" class="card approval" hidden>
+    <h2>Decision needed</h2>
+    <p class="quiet">The platform still enforces policy after you choose.</p>
+    <div id="options" class="options"></div>
+    <p id="approval-msg" class="quiet"></p>
+  </section>
+
+  <section class="card">
+    <h2>Activity</h2>
+    <ol id="feed" class="feed"></ol>
+  </section>
+</div>
+{% endblock %}

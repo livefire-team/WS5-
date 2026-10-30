@@ -1,0 +1,44 @@
+{
+  "additionalProperties": true,
+  "description": "What WS2's referee writes for one run. Extra fields are kept, never required.",
+  "properties": {
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "last_step": {
+      "default": "",
+      "title": "Last Step",
+      "type": "string"
+    },
+    "error": {
+      "default": "",
+      "title": "Error",
+      "type": "string"
+    },
+    "orders_persisted": {
+      "default": 0,
+      "title": "Orders Persisted",
+      "type": "integer"
+    },
+    "payment_auths_persisted": {
+      "default": 0,
+      "title": "Payment Auths Persisted",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "label",
+    "verdict"
+  ],
+  "title": "RefereeResult",
+  "type": "object"
+}

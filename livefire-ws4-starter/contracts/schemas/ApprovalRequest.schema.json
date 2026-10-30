@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "ApprovalOption": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z_]{1,24}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "ApprovalOption",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What the workflow asks a person. The Control Center shows it from the approval.requested event.",
+  "properties": {
+    "request_id": {
+      "pattern": "^apr-[0-9]{1,3}$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "purpose": {
+      "enum": [
+        "recovery",
+        "deploy",
+        "acceptance"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "options": {
+      "items": {
+        "$ref": "#/$defs/ApprovalOption"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Options",
+      "type": "array"
+    }
+  },
+  "required": [
+    "request_id",
+    "purpose",
+    "options"
+  ],
+  "title": "ApprovalRequest",
+  "type": "object"
+}

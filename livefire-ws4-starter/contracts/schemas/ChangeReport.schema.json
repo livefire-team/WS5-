@@ -1,0 +1,109 @@
+{
+  "$defs": {
+    "ChangeMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "change": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Change",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "acceptance_criterion": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Acceptance Criterion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "change",
+        "evidence_ref",
+        "acceptance_criterion"
+      ],
+      "title": "ChangeMapping",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The Engineer's output: what it changed on the candidate branch, and why.",
+  "properties": {
+    "drill_id": {
+      "pattern": "^drill-[A-Za-z0-9-]{1,64}$",
+      "title": "Drill Id",
+      "type": "string"
+    },
+    "attempt": {
+      "maximum": 2,
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "branch": {
+      "pattern": "^candidate/drill-[A-Za-z0-9-]{1,64}-[12]$",
+      "title": "Branch",
+      "type": "string"
+    },
+    "commits": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "title": "Commits",
+      "type": "array"
+    },
+    "changed_paths": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Changed Paths",
+      "type": "array"
+    },
+    "regression_test_path": {
+      "maxLength": 200,
+      "title": "Regression Test Path",
+      "type": "string"
+    },
+    "runbook_path": {
+      "maxLength": 200,
+      "title": "Runbook Path",
+      "type": "string"
+    },
+    "evidence_to_change": {
+      "items": {
+        "$ref": "#/$defs/ChangeMapping"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "title": "Evidence To Change",
+      "type": "array"
+    },
+    "notes": {
+      "maxLength": 600,
+      "title": "Notes",
+      "type": "string"
+    }
+  },
+  "required": [
+    "drill_id",
+    "attempt",
+    "branch",
+    "commits",
+    "changed_paths",
+    "regression_test_path",
+    "runbook_path",
+    "evidence_to_change",
+    "notes"
+  ],
+  "title": "ChangeReport",
+  "type": "object"
+}

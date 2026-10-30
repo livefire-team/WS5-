@@ -1,0 +1,13 @@
+# Add to .github/workflows/order-service.yml (WS1), after checkout with fetch-depth: 0.
+      - name: Candidate scope check
+        if: startsWith(github.ref_name, 'candidate/')
+        run: |
+          bad=$(git diff --name-only origin/main...HEAD | grep -vE \
+            '^(src/order-service/app/secret_provider\.py|src/order-service/tests/test_[^/]+\.py|runbooks/[^/]+\.md)$' || true)
+          [ -z "$bad" ] || { echo "outside the candidate allowlist:"; echo "$bad"; exit 1; }
+
+      - name: SAST and dependency scan
+        run: |
+          pip install bandit pip-audit
+          bandit -q -ll -r src/order-service/app
+          pip-audit -r src/order-service/requirements.txt

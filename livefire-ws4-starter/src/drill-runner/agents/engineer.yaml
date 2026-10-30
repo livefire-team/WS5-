@@ -1,0 +1,17 @@
+# Engineer: branch-only. Created by scripts/create_agents.py; never edited in the portal.
+name: lf-engineer
+description: LiveFire Remediation Engineer (branch-scoped repository tools)
+instructions_file: engineer.md
+output_model: ChangeReport
+reasoning_effort: medium
+mcp:
+  server_label: livefire_engineer
+  connection: livefire-engineer-mcp
+  path: /engineer/mcp
+  allowed_tools:
+    - read_allowed_files
+    - create_candidate_branch
+    - apply_patch
+    - write_regression_test
+    - update_runbook
+    - get_ci_results

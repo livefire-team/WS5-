@@ -1,0 +1,274 @@
+{
+  "additionalProperties": false,
+  "description": "One schema for both Planner passes, so one Foundry agent serves both. Exactly one part is filled.",
+  "properties": {
+    "stage": {
+      "enum": [
+        "options",
+        "brief"
+      ],
+      "type": "string"
+    },
+    "recovery_options": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "description": "The Planner's first output: what broke and how it could be restored.",
+          "properties": {
+            "drill_id": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "rejected_hypotheses": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "confidence": {
+              "type": "number"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "broad",
+                      "narrow"
+                    ],
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "action": {
+                    "enum": [
+                      "grant_contributor_subscription",
+                      "restore_kv_secrets_user"
+                    ],
+                    "type": "string"
+                  },
+                  "risk": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "source": {
+                          "enum": [
+                            "telemetry",
+                            "identity",
+                            "incident",
+                            "runbook",
+                            "repository",
+                            "commit",
+                            "referee",
+                            "ci"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "type": "string"
+                        },
+                        "note": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "ref",
+                        "note"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "action",
+                  "risk",
+                  "evidence"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "recommended": {
+              "enum": [
+                "broad",
+                "narrow"
+              ],
+              "type": "string"
+            },
+            "evidence": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "enum": [
+                      "telemetry",
+                      "identity",
+                      "incident",
+                      "runbook",
+                      "repository",
+                      "commit",
+                      "referee",
+                      "ci"
+                    ],
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source",
+                  "ref",
+                  "note"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "drill_id",
+            "hypothesis",
+            "rejected_hypotheses",
+            "confidence",
+            "options",
+            "recommended",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "remediation_brief": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "description": "The Planner's output after a False Green; the Engineer's complete handoff (blueprint 5.2).",
+          "properties": {
+            "incident_id": {
+              "type": "string"
+            },
+            "evidence_references": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "enum": [
+                      "telemetry",
+                      "identity",
+                      "incident",
+                      "runbook",
+                      "repository",
+                      "commit",
+                      "referee",
+                      "ci"
+                    ],
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source",
+                  "ref",
+                  "note"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "supported_hypothesis": {
+              "type": "string"
+            },
+            "rejected_hypotheses": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "affected_components": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "required_behavior": {
+              "type": "string"
+            },
+            "acceptance_criteria": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "allowed_repository_paths": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "prohibited_changes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "residual_risks": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "confidence": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "incident_id",
+            "evidence_references",
+            "supported_hypothesis",
+            "rejected_hypotheses",
+            "affected_components",
+            "required_behavior",
+            "acceptance_criteria",
+            "allowed_repository_paths",
+            "prohibited_changes",
+            "residual_risks",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "stage",
+    "recovery_options",
+    "remediation_brief"
+  ],
+  "type": "object"
+}

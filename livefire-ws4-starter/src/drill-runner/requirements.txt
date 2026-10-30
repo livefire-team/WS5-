@@ -1,0 +1,9 @@
+agent-framework-core==1.23.0
+azure-ai-projects==2.9.0
+azure-identity==1.26.0
+azure-storage-blob==12.31.0
+openai==3.37.0
+httpx==0.28.1
+pydantic==2.14.1
+PyJWT[crypto]==2.15.1
+PyYAML==6.0.3

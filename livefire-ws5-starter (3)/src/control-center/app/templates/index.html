@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block body %}
+<section class="card">
+  <h1>Drills</h1>
+  {% if drills %}
+  <table class="drills">
+    <thead><tr><th>Drill</th><th></th></tr></thead>
+    <tbody>
+    {% for d in drills %}
+      <tr><td><code>{{ d }}</code></td>
+          <td><a href="/drills/{{ d }}">Open live</a> · <a href="/drills/{{ d }}?mode=replay&amp;speed=10">Replay ×10</a></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="quiet">No drills yet. Run one with WS2's scripts, or point EVENT_SOURCE at the sample fixtures.</p>
+  {% endif %}
+</section>
+{% endblock %}
