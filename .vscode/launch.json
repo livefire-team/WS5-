@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Control Center (sample drills)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--port", "8080"],
+      "cwd": "${workspaceFolder}/src/control-center/app",
+      "env": {
+        "AUTH_MODE": "local",
+        "ALLOW_LOCAL_AUTH": "1",
+        "EVENT_SOURCE": "dir:../fixtures/drills"
+      },
+      "justMyCode": true
+    },
+    {
+      "name": "Control Center (WS2 evidence folder)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["main:app", "--port", "8080"],
+      "cwd": "${workspaceFolder}/src/control-center/app",
+      "env": {
+        "AUTH_MODE": "local",
+        "ALLOW_LOCAL_AUTH": "1",
+        "EVENT_SOURCE": "dir:${workspaceFolder}/evidence"
+      },
+      "justMyCode": true
+    }
+  ]
+}
