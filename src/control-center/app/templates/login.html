@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign in · LiveFire Control Center{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block content %}
+<section class="login-card">
+  <h1>Sign in</h1>
+  <p class="muted">Your name is recorded on every decision you make.</p>
+  {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Your name <input name="name" maxlength="64" autocomplete="name" required autofocus></label>
+    <label>Session passcode <input name="passcode" type="password" autocomplete="current-password" required></label>
+    <button type="submit" class="primary">Sign in</button>
+  </form>
+</section>
+{% endblock %}

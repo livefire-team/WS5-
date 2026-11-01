@@ -1,0 +1,12 @@
+{"ts": "2026-10-26T09:30:00.000Z", "drill_id": "drill-sample-g1-manual", "action": "reset", "result": "ok", "details": {}}
+{"ts": "2026-10-26T09:30:20.000Z", "drill_id": "drill-sample-g1-manual", "action": "wait.ok", "result": "ok", "details": {"seconds": 3}}
+{"ts": "2026-10-26T09:31:00.000Z", "drill_id": "drill-sample-g1-manual", "action": "referee.baseline", "result": "PASS", "details": {"last_step": "confirmation", "error": null, "orders_persisted": 1}}
+{"ts": "2026-10-26T09:32:00.000Z", "drill_id": "drill-sample-g1-manual", "action": "fault.inject", "result": "ok", "details": {"model": "rbac", "entries_after": 0}}
+{"ts": "2026-10-26T09:33:35.000Z", "drill_id": "drill-sample-g1-manual", "action": "wait.forbidden", "result": "ok", "details": {"seconds": 94}}
+{"ts": "2026-10-26T09:34:20.000Z", "drill_id": "drill-sample-g1-manual", "action": "referee.during-fault", "result": "FAIL", "details": {"last_step": "checkout", "error": "OrderFailed: 503 from POST /orders", "orders_persisted": 0}}
+{"ts": "2026-10-26T09:35:30.000Z", "drill_id": "drill-sample-g1-manual", "action": "recover.broad", "result": "denied", "details": {"code": "RequestDisallowedByPolicy"}}
+{"ts": "2026-10-26T09:36:00.000Z", "drill_id": "drill-sample-g1-manual", "action": "fault.restore", "result": "ok", "details": {"model": "rbac", "entries_after": 1}}
+{"ts": "2026-10-26T09:37:22.000Z", "drill_id": "drill-sample-g1-manual", "action": "wait.ok", "result": "ok", "details": {"seconds": 81}}
+{"ts": "2026-10-26T09:38:20.000Z", "drill_id": "drill-sample-g1-manual", "action": "referee.after-restore", "result": "FAIL", "details": {"last_step": "checkout", "error": "SecretUnavailable: cached 403 from Key Vault", "orders_persisted": 0}}
+{"ts": "2026-10-26T09:40:00.000Z", "drill_id": "drill-sample-g1-manual", "action": "reset", "result": "ok", "details": {}}
+{"ts": "2026-10-26T09:41:00.000Z", "drill_id": "drill-sample-g1-manual", "action": "referee.after-reset", "result": "PASS", "details": {"last_step": "confirmation", "error": null, "orders_persisted": 1}}

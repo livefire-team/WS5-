@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ drill_id }} · LiveFire Control Center{% endblock %}
+{% block body_class %}page-drill mode-{{ mode }}{% endblock %}
+{% block body_data %}data-drill-id="{{ drill_id }}" data-mode="{{ mode }}" data-speed="{{ speed }}"{% endblock %}
+{% block content %}
+<section class="drillbar">
+  <div class="drill-id mono">{{ drill_id }}</div>
+  {% if mode == "replay" %}
+  <span class="badge replay">Replay ×{{ speed }}</span>
+  {% else %}
+  <span class="badge live">Live</span>
+  {% endif %}
+  <span id="conn" class="conn">Connecting…</span>
+  <button id="kill" class="kill" type="button" {% if mode == "replay" %}disabled title="Disabled in replay"{% endif %}>Kill switch</button>
+</section>
+
+<ol id="timeline" class="timeline" aria-label="Drill stages"></ol>
+
+<section id="banner" class="banner kind-healthy" role="status" aria-live="polite">
+  <span id="banner-text">Waiting for events…</span>
+</section>
+
+<section class="split">
+  <article id="infra" class="panel">
+    <h2>Infrastructure health <small>what dashboards show</small></h2>
+    <p class="state" id="infra-state">—</p>
+    <p class="detail" id="infra-text"></p>
+  </article>
+  <article id="journey" class="panel">
+    <h2>Customer journey <small>what the independent referee sees</small></h2>
+    <p class="state" id="journey-state">—</p>
+    <p class="detail" id="journey-text"></p>
+    <dl class="facts" id="journey-facts"></dl>
+  </article>
+</section>
+
+<section id="decision" class="decision" hidden>
+  <h2>Decision needed</h2>
+  <p class="muted">Pick one. The workflow carries it out and Azure Policy has the final say.</p>
+  <div id="decision-options" class="options"></div>
+  <p id="decision-msg" class="decision-msg" role="alert"></p>
+</section>
+
+<section id="scorecard" class="scorecard" aria-label="Scorecard"></section>
+
+<section id="links" class="links" hidden></section>
+
+<section class="feed-wrap">
+  <h2>Activity</h2>
+  <ol id="feed" class="feed"></ol>
+</section>
+{% endblock %}

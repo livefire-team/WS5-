@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+src/control-center/fixtures/drills/drill-try-*/

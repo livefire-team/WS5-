@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block body_class %}page-index{% endblock %}
+{% block content %}
+<section class="drill-list">
+  <h1>Drills</h1>
+  {% if drills %}
+  <table>
+    <thead><tr><th>Drill</th><th>Last update (UTC)</th><th></th></tr></thead>
+    <tbody>
+    {% for d in drills %}
+      <tr>
+        <td class="mono">{{ d.drill_id }}</td>
+        <td class="mono">{{ d.updated_text }}</td>
+        <td class="actions">
+          <a class="btn" href="/drills/{{ d.drill_id }}?mode=live">Live</a>
+          <a class="btn ghost" href="/drills/{{ d.drill_id }}?mode=replay&amp;speed=10">Replay ×10</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No drills in the event store yet. Check <code>EVENT_SOURCE</code>.</p>
+  {% endif %}
+</section>
+{% endblock %}
