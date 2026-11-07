@@ -218,6 +218,48 @@ async def replay(events: list[dict], speed: float = 10.0, max_gap: float = 3.0) 
         yield list(shown)
 
 
+# ---------------------------------------------------------------- sync: a local folder <-> the shared store
+
+BACK_ACTIONS = ("approval.decided", "kill.requested")  # what the Control Center writes, copied back down
+
+
+def _key(event: dict) -> str:
+    return json.dumps(event, sort_keys=True, separators=(",", ":"))
+
+
+def sync_once(local, remote, drill_id: str, back_actions: Iterable[str] = BACK_ACTIONS) -> tuple[int, int]:
+    """Copies one drill's events between two stores, without duplicates.
+
+    Up: every event in the local file that the remote store doesn't have yet (WS2's laptop scripts,
+    WS4's stub runner and the bridge scripts write locally). Down: only the Control Center's own
+    events (back_actions), so a script waiting on the local file sees the click made on the deployed app.
+    Events are compared whole, so it is safe to stop and restart at any time.
+    """
+    from collections import Counter
+
+    back = set(back_actions)
+    local_events, remote_events = local.read(drill_id), remote.read(drill_id)
+    in_remote, in_local = Counter(map(_key, remote_events)), Counter(map(_key, local_events))
+    up = down = 0
+    seen: Counter = Counter()
+    for event in local_events:
+        k = _key(event)
+        seen[k] += 1
+        if seen[k] > in_remote[k]:
+            remote.append(drill_id, event)
+            up += 1
+    seen = Counter()
+    for event in remote_events:
+        if event["action"] not in back:
+            continue
+        k = _key(event)
+        seen[k] += 1
+        if seen[k] > in_local[k]:
+            local.append(drill_id, event)
+            down += 1
+    return up, down
+
+
 # ---------------------------------------------------------------- command line for shell scripts
 
 def _wait_for(store, drill_id: str, match, timeout: float, poll: float = 1.0) -> dict | None:
@@ -248,8 +290,33 @@ def main(argv: Iterable[str] | None = None) -> int:
     k.add_argument("drill_id"); k.add_argument("action"); k.add_argument("--timeout", type=float, default=86400)
     k.add_argument("--after", type=int, default=None, help="only events after this many lines (default: now)")
 
+    s = sub.add_parser("sync", help="keep a local drill folder and EVENT_SOURCE in step (Ctrl+C to stop)")
+    s.add_argument("drill_id")
+    s.add_argument("--local", required=True, help="the local store, e.g. dir:$PWD/evidence")
+    s.add_argument("--interval", type=float, default=1.0, help="seconds between passes (default 1)")
+    s.add_argument("--once", action="store_true", help="one pass, then exit")
+
     args = p.parse_args(list(argv) if argv is not None else None)
     store = store_from_env()
+
+    if args.cmd == "sync":
+        validate_drill_id(args.drill_id)
+        local = store_from_env(args.local)
+        if not isinstance(local, DirStore):
+            p.error("--local must be dir:<path>")
+        print(f"Syncing {args.drill_id}: {args.local} <-> {os.environ.get('EVENT_SOURCE')}", file=sys.stderr)
+        while True:
+            try:
+                up, down = sync_once(local, store, args.drill_id)
+                if up or down:
+                    print(f"{now_ts()} up {up}, down {down}", file=sys.stderr)
+            except Exception as exc:  # a dropped connection must not end the sync mid-drill
+                if args.once:
+                    raise
+                print(f"{now_ts()} sync pass failed, retrying: {type(exc).__name__}: {exc}", file=sys.stderr)
+            if args.once:
+                return 0
+            time.sleep(max(args.interval, 0.2))
 
     if args.cmd == "append":
         store.append(args.drill_id, make_event(args.drill_id, args.action, args.result, json.loads(args.details)))

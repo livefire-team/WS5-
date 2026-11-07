@@ -22,10 +22,14 @@ src/control-center/
   app/security.py                   sign-in modes, CSRF, security headers
   app/templates/, app/static/       the pages, one CSS file, one JS file (no CDN, no build step)
   fixtures/make_samples.py          writes the two sample drills
-  fixtures/drills/                  drill-sample-g1-manual, drill-sample-full-loop
-  tests/                            24 tests
+  fixtures/drills/                  drill-sample-g1-manual, drill-sample-full-loop, drill-sample-ops-smoke
+                                    (WS2's Ops Service format), drill-sample-ws4-stub (WS4's stub runner)
+  tests/                            36 tests
   requirements.txt, Dockerfile
-infra/modules/control-center.bicep  Azure Container Apps deployment (called from WS2's control.bicep)
+infra/modules/control-center.bicep  Azure Container Apps deployment into WS2's control plane
+infra/main.ws5-snippet.bicep        G3: the lines that add it to WS2's main.bicep
+scripts/deploy-cc.sh                G2: secrets, image import, deploy and verify, on its own
+scripts/metrics_bridge.py           G2 fallback: business tiles from Application Insights
 .github/workflows/control-center.yml  tests on every PR, image to GHCR from main
 scripts/decide-and-recover.sh       G2 bridge: makes the decision buttons act before WS4 exists
 scripts/kill-watcher.sh             G2 bridge: makes the kill switch act before WS4 exists
@@ -91,19 +95,25 @@ AUTH_MODE=passcode EVENT_SOURCE=dir:../fixtures/drills uvicorn main:app --port 8
 
 Use `http://localhost` (not `127.0.0.1` or another machine's IP), or the cookies won't stick.
 
-## G2 (Nov 2) checklist
+## G2 (Mon Nov 9): deployed in WS2's control plane
 
-- [ ] Event catalog committed and sent to WS4, WS2, WS1 (see `docs/handoffs.md`)
-- [ ] WS2's Ops Service writes events through `src/shared/livefire_events.py`
-- [ ] WS2 has added the control environment, `id-lf-control-center`, control Key Vault and evidence
-      container to `control.bicep`, and calls `infra/modules/control-center.bicep`
-- [ ] Secrets in the control Key Vault: `cc-session-secret`, `cc-passcode-sha256`
-- [ ] Deployed; smoke test: sign-in works, a drill from Blob appears, CSP header present, no console errors
-- [ ] Decision and kill switch wired through `scripts/decide-and-recover.sh` and `scripts/kill-watcher.sh`
-- [ ] Business tiles filled by WS1's `metrics.orders`
+Follow the "WS5 G2 Build Steps" guide. In short:
 
-**Fallback if the lab deploy isn't ready:** run the Control Center on the driver's laptop against
-WS2's local evidence folder (above). That's a legitimate G2 demo of live stages.
+```bash
+export CONTROL_RG=rg-lf-control-<azd env name>     # WS2's control resource group, e.g. rg-lf-control-lf-eh
+scripts/deploy-cc.sh discover                      # what WS2's G2 platform provides
+scripts/deploy-cc.sh all                           # secrets, image into the private registry, deploy, verify
+```
+
+- `infra/modules/control-center.bicep` creates `id-lf-control-center` with three role assignments (Key Vault
+  Secrets User on its two secrets only, Storage Blob Data Contributor on the evidence container) and pulls from
+  WS2's private registry with `id-lf-acrpull`. `infra/main.ws5-snippet.bicep` is the G3 wiring for WS2's
+  `main.bicep`.
+- `python src/shared/livefire_events.py sync <drill-id> --local dir:$PWD/evidence` (with `EVENT_SOURCE=blob:...`)
+  copies a laptop drill folder to Blob and the Control Center's clicks back down. It lets WS2's laptop scripts,
+  the bridge scripts and WS4's stub runner drive the deployed Control Center.
+- `scripts/metrics_bridge.py` is the G2 fallback for the business tiles until WS1's load generator writes
+  `metrics.orders` itself.
 
 ## Where this differs from the build guide, and why
 
