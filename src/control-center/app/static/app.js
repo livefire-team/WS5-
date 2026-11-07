@@ -116,6 +116,7 @@ function renderDecision(view) {
   const d = view.decision;
   if (!d) { box.hidden = true; return; }
   box.hidden = false;
+  $("decision-title").textContent = d.title || "Decision needed";
   const buttons = d.options.map((opt) => {
     const b = el("button", "option" + (opt.broad ? " broad" : ""), opt.label);
     b.type = "button";
@@ -166,6 +167,7 @@ function render(view) {
   lastView = view;
   renderTimeline(view);
   renderBanner(view);
+  $("stub-badge").hidden = !view.stubbed;
   renderSplit(view);
   renderScorecard(view);
   renderDecision(view);

@@ -3,9 +3,10 @@
 # Waits for a kill.requested event in the drill, then runs WS2's reset script once.
 # From G3, WS4's workflow owns this reaction; stop running this script then.
 #
+# Run it from the root of WS2's repo, in its own terminal on the driver's machine, next to the sync:
 #   export DRILL_ID=<the drill in progress>
-#   export EVENT_SOURCE=dir:<repo>/evidence
-#   ./scripts/kill-watcher.sh            # leave it running in its own terminal on the driver's machine
+#   export EVENT_SOURCE=dir:$PWD/evidence
+#   RESET_SH=./scripts/reset.sh <ws5-repo>/scripts/kill-watcher.sh
 #
 # Optional: RESET_SH (default: scripts/reset.sh, WS2's script).
 set -euo pipefail

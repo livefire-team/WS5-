@@ -1,47 +1,55 @@
-// LiveFire Control Center on Azure Container Apps (WS5).
-// Called once from WS2's control.bicep, after the control environment, identity, Key Vault
-// and evidence storage exist. One replica, HTTPS only, secrets as Key Vault references,
-// and least privilege: blob access on the evidence container only, nothing on the twin.
+// LiveFire Fusion Control Center (WS5) on Azure Container Apps, in WS2's G2 control plane.
+//
+// G2: deployed on its own into the control resource group by scripts/deploy-cc.sh (az deployment group create).
+// G3: the same module is called from WS2's infra/main.bicep, so the one-command rebuild includes it.
+//
+// What it needs from WS2's control.bicep (all exist from G2): the control Container Apps environment, the private
+// registry and its pull identity (id-lf-acrpull), the control Key Vault (RBAC) and the evidence storage account.
+// What it creates: its own identity, id-lf-control-center, with three role assignments and nothing else:
+//   - Key Vault Secrets User on cc-session-secret, and on cc-passcode-sha256 or cc-entra-client-secret.
+//     Per secret, not vault-wide: the control vault also holds the Ops Service keys, and this app faces the internet.
+//   - Storage Blob Data Contributor on the evidence container only, to read drills and append decisions.
+// No rights on the twin, no Ops Service key. One replica, HTTPS only, secrets as Key Vault references.
 
 @description('Azure region')
 param location string = resourceGroup().location
 
-@description('Resource ID of the control Container Apps environment')
+@description('Resource ID of the control Container Apps environment (WS2 output CONTAINER_APPS_ENVIRONMENT_ID)')
 param environmentId string
 
-@description('Image to run, e.g. ghcr.io/<org>/control-center:sha-<commit>')
+@description('Image in the private registry, <registry>/control-center:sha-<40 hex>')
 param image string
 
-@description('Resource ID of the user-assigned identity id-lf-control-center')
-param identityId string
+@description('Login server of the private registry (WS2 output REGISTRY_SERVER)')
+param registryServer string
 
-@description('Client ID of id-lf-control-center')
-param identityClientId string
+@description('Resource ID of id-lf-acrpull, the identity whose only role is AcrPull (WS2 output PULL_IDENTITY_ID)')
+param pullIdentityId string
 
-@description('Principal (object) ID of id-lf-control-center')
-param identityPrincipalId string
-
-@allowed([ 'passcode', 'easyauth' ])
-@description('Sign-in mode: easyauth if the day-1 probe allowed app registrations, otherwise passcode')
+@allowed(['passcode', 'easyauth'])
+@description('Sign-in: passcode (G2 default) or easyauth (Microsoft Entra ID, needs an app registration)')
 param authMode string = 'passcode'
 
-@description('Name of the control Key Vault holding cc-session-secret and cc-passcode-sha256 or cc-entra-client-secret (RBAC permission model)')
+@description('Control Key Vault (WS2 output CONTROL_KEYVAULT_NAME). The cc-* secrets must exist before this deploys')
 param keyVaultName string
 
-@description('Name of the evidence storage account')
+@description('Evidence storage account (WS2 output EVIDENCE_ACCOUNT_NAME)')
 param evidenceAccountName string
 
-@description('Name of the evidence container')
+@description('Evidence container holding <drill-id>/events.jsonl')
 param evidenceContainerName string = 'evidence'
 
 @description('Entra app registration client ID (easyauth only)')
 param entraClientId string = ''
 
-@description('Optional allow-list, e.g. [\'203.0.113.0/24\']. Empty means open to the internet (sign-in still required).')
+@description('Optional allow-list of CIDR ranges, e.g. [\'203.0.113.0/24\']. Empty: open to the internet, sign-in still required')
 param allowedIpRanges array = []
 
 @description('Name of the container app')
 param name string = 'ca-control-center'
+
+@description('Name of the Control Center identity')
+param identityName string = 'id-lf-control-center'
 
 @description('Link prefixes the screen may render (comma-separated)')
 param linkPrefixes string = 'https://ai.azure.com/,https://portal.azure.com/,https://github.com/'
@@ -49,10 +57,22 @@ param linkPrefixes string = 'https://ai.azure.com/,https://portal.azure.com/,htt
 var keyVaultSecretsUser = '4633458b-17de-408a-b874-0445c86b69e6'
 var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var useEasyAuth = authMode == 'easyauth'
+var secretNames = useEasyAuth ? ['cc-session-secret', 'cc-entra-client-secret'] : ['cc-session-secret', 'cc-passcode-sha256']
+var secretUri = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/'
+
+resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: identityName
+  location: location
+}
 
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
 }
+
+resource ccSecrets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' existing = [for s in secretNames: {
+  parent: vault
+  name: s
+}]
 
 resource evidenceAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: evidenceAccountName
@@ -69,53 +89,36 @@ resource evidenceContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
 }
 
 // Roles first: Key Vault references fail on the first revision if the role hasn't propagated.
-resource vaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(vault.id, identityPrincipalId, keyVaultSecretsUser)
-  scope: vault
+resource secretRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (s, i) in secretNames: {
+  name: guid(ccSecrets[i].id, identity.id, keyVaultSecretsUser)
+  scope: ccSecrets[i]
   properties: {
-    principalId: identityPrincipalId
+    principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUser)
   }
-}
+}]
 
 resource evidenceRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(evidenceContainer.id, identityPrincipalId, storageBlobDataContributor)
+  name: guid(evidenceContainer.id, identity.id, storageBlobDataContributor)
   scope: evidenceContainer
   properties: {
-    principalId: identityPrincipalId
+    principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributor)
   }
 }
 
-var vaultUri = vault.properties.vaultUri
-
-var baseSecrets = [
-  {
-    name: 'cc-session-secret'
-    keyVaultUrl: '${vaultUri}secrets/cc-session-secret'
-    identity: identityId
-  }
-]
-var modeSecrets = useEasyAuth ? [
-  {
-    name: 'cc-entra-client-secret'
-    keyVaultUrl: '${vaultUri}secrets/cc-entra-client-secret'
-    identity: identityId
-  }
-] : [
-  {
-    name: 'cc-passcode-sha256'
-    keyVaultUrl: '${vaultUri}secrets/cc-passcode-sha256'
-    identity: identityId
-  }
-]
+var appSecrets = [for s in secretNames: {
+  name: s
+  keyVaultUrl: '${secretUri}${s}'
+  identity: identity.id
+}]
 
 var baseEnv = [
   { name: 'AUTH_MODE', value: authMode }
   { name: 'EVENT_SOURCE', value: 'blob:${evidenceAccount.properties.primaryEndpoints.blob}${evidenceContainerName}' }
-  { name: 'AZURE_CLIENT_ID', value: identityClientId }
+  { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
   { name: 'SESSION_SECRET', secretRef: 'cc-session-secret' }
   { name: 'LINK_PREFIXES', value: linkPrefixes }
 ]
@@ -129,13 +132,15 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${identityId}': {}
+      '${identity.id}': {}
+      '${pullIdentityId}': {}
     }
   }
   properties: {
     environmentId: environmentId
     configuration: {
       activeRevisionsMode: 'Single'
+      registries: [{ server: registryServer, identity: pullIdentityId }]
       ingress: {
         external: true
         targetPort: 8000
@@ -147,7 +152,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           action: 'Allow'
         }]
       }
-      secrets: concat(baseSecrets, modeSecrets)
+      secrets: appSecrets
     }
     template: {
       containers: [
@@ -173,7 +178,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
-      // One replica: sign-in lockout counts and live streams must not split across copies.
+      // One replica: sign-in lockout counts, the decision lock and live streams must not split across copies.
       scale: {
         minReplicas: 1
         maxReplicas: 1
@@ -181,7 +186,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     }
   }
   dependsOn: [
-    vaultRole
+    secretRoles
     evidenceRole
   ]
 }
@@ -196,7 +201,7 @@ resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (useEasy
     globalValidation: {
       unauthenticatedClientAction: 'RedirectToLoginPage'
       redirectToProvider: 'azureactivedirectory'
-      excludedPaths: [ '/health' ]
+      excludedPaths: ['/health']
     }
     identityProviders: {
       azureActiveDirectory: {
@@ -213,3 +218,5 @@ resource auth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (useEasy
 
 output fqdn string = app.properties.configuration.ingress.fqdn
 output url string = 'https://${app.properties.configuration.ingress.fqdn}'
+output identityName string = identity.name
+output principalId string = identity.properties.principalId

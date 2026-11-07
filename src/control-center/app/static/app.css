@@ -67,6 +67,7 @@ button.link { background: none; border: 0; color: #fff; text-decoration: underli
 .badge { padding: 4px 12px; border-radius: 999px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-size: .85rem; }
 .badge.live { background: var(--red); color: #fff; }
 .badge.replay { background: var(--amber-bg); color: var(--amber); border: 2px dashed var(--amber); }
+.badge.stub { background: var(--amber-bg); color: var(--amber); border: 2px solid var(--amber); }
 .conn { color: var(--muted); font-size: .9rem; }
 .conn.warn { color: var(--amber); font-weight: 600; }
 .kill { margin-left: auto; padding: 10px 18px; border-radius: 8px; border: 2px solid var(--red); background: #fff; color: var(--red);

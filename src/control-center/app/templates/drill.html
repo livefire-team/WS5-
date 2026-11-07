@@ -10,6 +10,7 @@
   {% else %}
   <span class="badge live">Live</span>
   {% endif %}
+  <span id="stub-badge" class="badge stub" hidden>Stubbed: no Azure, no model</span>
   <span id="conn" class="conn">Connecting…</span>
   <button id="kill" class="kill" type="button" {% if mode == "replay" %}disabled title="Disabled in replay"{% endif %}>Kill switch</button>
 </section>
@@ -35,7 +36,7 @@
 </section>
 
 <section id="decision" class="decision" hidden>
-  <h2>Decision needed</h2>
+  <h2 id="decision-title">Decision needed</h2>
   <p class="muted">Pick one. The workflow carries it out and Azure Policy has the final say.</p>
   <div id="decision-options" class="options"></div>
   <p id="decision-msg" class="decision-msg" role="alert"></p>

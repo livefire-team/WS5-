@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 .env
 src/control-center/fixtures/drills/drill-try-*/
+.local/
+evidence/
