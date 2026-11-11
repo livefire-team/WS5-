@@ -115,6 +115,30 @@ scripts/deploy-cc.sh all                           # secrets, image into the pri
 - `scripts/metrics_bridge.py` is the G2 fallback for the business tiles until WS1's load generator writes
   `metrics.orders` itself.
 
+## G3: the rest of the scorecard, and the Improvements panel
+
+Merge after the G2 gate. Nothing changes for G2's checks: the new tiles show a dash until their events exist.
+
+- **New tiles:** Against target (met or missed), Durable improvements, Browser minutes, Twin lifetime, the
+  backlog's peak and whether it's draining, and Decision time shown as "Pre-authorized" in Autonomous Twin.
+  Failed orders now counts only from the fault to verified recovery, the same formula as WS4's scorecard.
+- **The target** comes from `target_recovery_s` on `drill.start` (WS4 contracts v1.1). Until WS4 sends it, the
+  team's agreed number can be set with `CC_TARGET_RECOVERY_S=<seconds> scripts/deploy-cc.sh deploy`; the tile
+  then says "team setting".
+- **The Improvements panel** reads WS4's sealed `<drill-id>/package.json` once `package.ready` is in the log.
+  It lists `operational_debt` and `next_drill_recommendation` (contract v1.1); with contract 1.0 it lists the
+  candidate fix, regression test and runbook from the change report. Artifacts link only into
+  `https://github.com/livefire-team/` (`ARTIFACT_LINK_PREFIX`); everything else is plain text.
+- **The seal check:** the screen re-computes the package's sha256 and WS4's `events_sha256` over the first
+  `events_count` events. Green means the package and the events it summarises are exactly what WS4 sealed;
+  red means one of them changed after sealing, so the package is not to be trusted.
+- **The sync** copies `package.json` to Blob byte for byte, before the `package.ready` event that announces it.
+- **Fixture:** `drill-g2-stub-1107-run2`, WS4's stub runner clicked on the deployed app on Nov 7, with its package.
+- **WS3's denials (T-03, T-04):** every `planner.tool_call`, `engineer.tool_call` and `recovery.tool_call` reads as a
+  plain line and counts in the tool-call tile. A credential used on another role's endpoint reads "Cross-role call
+  refused" (T-03); a refused write such as a protected path reads "Engineer was denied apply_patch" (T-04); a
+  failed call is shown as failed, not as served.
+
 ## Where this differs from the build guide, and why
 
 | Guide | This build | Why |

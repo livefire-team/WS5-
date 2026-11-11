@@ -8,6 +8,8 @@ param controlCenterAuthMode string = 'passcode'
 param controlCenterEntraClientId string = ''
 @description('WS5: comma-separated CIDR ranges allowed to reach the Control Center; empty allows any address')
 param controlCenterAllowedIps string = ''
+@description('WS5: the team\'s recovery target in seconds for the scorecard, when a drill carries none; 0 means none')
+param controlCenterTargetRecoveryS string = '0'
 
 module controlCenter 'modules/control-center.bicep' = if (!empty(controlCenterImage)) { // WS5
   scope: controlRg
@@ -23,6 +25,7 @@ module controlCenter 'modules/control-center.bicep' = if (!empty(controlCenterIm
     evidenceAccountName: control.outputs.evidenceAccountName
     entraClientId: controlCenterEntraClientId
     allowedIpRanges: empty(controlCenterAllowedIps) ? [] : split(controlCenterAllowedIps, ',')
+    targetRecoverySeconds: int(controlCenterTargetRecoveryS)
   }
 }
 
