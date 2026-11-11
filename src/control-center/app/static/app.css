@@ -131,6 +131,30 @@ button.link { background: none; border: 0; color: #fff; text-decoration: underli
 .tile-hint { font-size: .75rem; color: var(--muted); }
 .tile.empty .tile-value { color: var(--line); }
 
+.tile.good { border: 2px solid var(--green); }
+.tile.good .tile-value { color: var(--green); }
+.tile.bad { border: 2px solid var(--red); }
+.tile.bad .tile-value { color: var(--red); }
+
+/* improvements: the sealed package's debt record (G3) */
+.improvements { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 14px; }
+.improvements-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.seal { font-size: .85rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.seal.ok { background: var(--green-bg); color: var(--green); }
+.seal.bad { background: var(--red); color: #fff; }
+.debt { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.debt-item { border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.debt-item.type-regression-coverage { border-left-color: var(--green); }
+.debt-item.type-runbook { border-left-color: var(--amber); }
+.debt-item.type-knowledge { border-left-color: var(--purple); }
+.debt-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; justify-content: space-between; }
+.debt-type { font-weight: 800; }
+.debt-status { font-size: .8rem; color: var(--muted); }
+.debt-item p { margin: 6px 0 0; word-break: break-word; }
+.debt-artifact code, .debt-artifact a { font-size: .85rem; }
+.debt-refs, .debt-risk { font-size: .85rem; color: var(--muted); }
+.improvements .facts dd { font-family: inherit; }
+
 .links { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 
 /* feed */
@@ -153,4 +177,5 @@ button.link { background: none; border: 0; color: #fff; text-decoration: underli
   .item { grid-template-columns: 5em 1fr; }
   .item-stage, .item-link { grid-column: 2; }
   .kill { margin-left: 0; }
+  .debt { grid-template-columns: 1fr; }
 }

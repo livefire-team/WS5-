@@ -54,6 +54,11 @@ param identityName string = 'id-lf-control-center'
 @description('Link prefixes the screen may render (comma-separated)')
 param linkPrefixes string = 'https://ai.azure.com/,https://portal.azure.com/,https://github.com/'
 
+@description('The team\'s recovery target in seconds, used when a drill doesn\'t carry target_recovery_s (WS4 contracts v1.1); 0 means none')
+@minValue(0)
+@maxValue(86399)
+param targetRecoverySeconds int = 0
+
 var keyVaultSecretsUser = '4633458b-17de-408a-b874-0445c86b69e6'
 var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var useEasyAuth = authMode == 'easyauth'
@@ -121,6 +126,7 @@ var baseEnv = [
   { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
   { name: 'SESSION_SECRET', secretRef: 'cc-session-secret' }
   { name: 'LINK_PREFIXES', value: linkPrefixes }
+  { name: 'TARGET_RECOVERY_S', value: string(targetRecoverySeconds) }
 ]
 var modeEnv = useEasyAuth ? [] : [
   { name: 'PASSCODE_SHA256', secretRef: 'cc-passcode-sha256' }

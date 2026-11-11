@@ -91,24 +91,124 @@ function tile(label, value, hint) {
   return t;
 }
 
+function has(v) { return v !== null && v !== undefined; }
+
+function targetTile(s) {
+  if (!has(s.target_recovery_s)) return tile("Against target", "—", "no recovery target set");
+  const source = s.target_source === "team setting" ? " (team setting)" : "";
+  const hint = "target " + fmtDuration(s.target_recovery_s) + source;
+  if (!has(s.target_met)) return tile("Against target", "—", hint);
+  const t = tile("Against target", s.target_met ? "Met" : "Missed", hint);
+  t.classList.add(s.target_met ? "good" : "bad");
+  return t;
+}
+
 function renderScorecard(view) {
   const s = view.scorecard;
   let calls = "—";
-  if (s.tool_calls !== null && s.tool_calls !== undefined) calls = `${s.tool_calls} (${s.tool_denials} denied)`;
+  if (has(s.tool_calls)) calls = `${s.tool_calls} (${s.tool_denials} denied)`;
+  let decision = fmtDuration(s.decision_time_s), decisionHint = null;
+  if (!has(s.decision_time_s) && s.preauthorized) { decision = "Pre-authorized"; decisionHint = `${s.preauthorized} by the drill's policy`; }
+  else if (s.preauthorized) decisionHint = `plus ${s.preauthorized} pre-authorized`;
+  let backlogHint = null;
+  if (has(s.backlog_peak) && s.backlog_peak > 0) backlogHint = `peak ${fmtNum(s.backlog_peak)}` + (s.backlog_draining ? ", draining" : "");
   const tiles = [
     tile("Verified recovery", fmtDuration(s.verified_recovery_s), "fault to first passing journey"),
+    targetTile(s),
     tile("False Green lasted", fmtDuration(s.false_green_s)),
     tile("Recovered by", s.recovered_by || "—"),
     tile("Policy denials", fmtNum(s.policy_denials)),
-    tile("Decision time", fmtDuration(s.decision_time_s)),
+    tile("Decision time", decision, decisionHint),
     tile("Agent tool calls", calls),
     tile("Orders per minute", fmtNum(s.orders_per_min, 1)),
-    tile("Failed orders", fmtNum(s.failed_orders)),
-    tile("Backlog", fmtNum(s.backlog)),
+    tile("Failed orders", fmtNum(s.failed_orders), "from the fault to verified recovery"),
+    tile("Backlog", fmtNum(s.backlog), backlogHint),
+    tile("Durable improvements", fmtNum(s.durable_improvements), "fixes, tests and runbooks with an artifact"),
     tile("Model tokens", fmtNum(s.tokens)),
-    tile("Estimated cost", s.est_cost_usd === null || s.est_cost_usd === undefined ? "—" : "$" + Number(s.est_cost_usd).toFixed(2)),
+    tile("Estimated cost", has(s.est_cost_usd) ? "$" + Number(s.est_cost_usd).toFixed(2) : "—"),
+    tile("Browser minutes", fmtNum(s.browser_minutes, 1), "customer-journey runs"),
+    tile("Twin lifetime", fmtDuration(s.twin_lifetime_s), "drill start to end"),
   ];
   $("scorecard").replaceChildren(...tiles);
+}
+
+const IMPROVEMENT_NOTES = {
+  waiting: "Appears when WS4 seals the evidence package, at the end of the drill.",
+  loading: "The evidence package was sealed; waiting for it to reach the evidence store.",
+  unreadable: "The evidence package could not be read. Check package.json in the evidence store.",
+};
+
+function renderSeal(imp) {
+  const seal = $("seal");
+  const i = imp.integrity;
+  if (imp.state !== "sealed" || !i) { seal.hidden = true; return; }
+  seal.hidden = false;
+  if (i.ok) {
+    const what = has(i.events) ? `the package and its first ${i.events_count} events match` : "the package matches";
+    seal.className = "seal ok";
+    seal.textContent = `Sealed: ${what} the checksums WS4 recorded`;
+  } else {
+    const what = [];
+    if (i.package === false) what.push("the package");
+    if (i.events === false) what.push(`the first ${i.events_count} events`);
+    if (i.same_drill === false) what.push("the drill ID");
+    if (i.package === null) what.push("no checksum was recorded for the package");
+    seal.className = "seal bad";
+    seal.textContent = "Not as sealed: " + (what.join(", ") || "checksum missing") + ". Treat this package as untrusted.";
+  }
+}
+
+function renderImprovements(view) {
+  const imp = view.improvements || { state: "waiting", debt: [] };
+  renderSeal(imp);
+  const note = $("improvements-note");
+  if (imp.state !== "sealed") {
+    note.hidden = false;
+    note.textContent = IMPROVEMENT_NOTES[imp.state] || IMPROVEMENT_NOTES.waiting;
+    $("debt").replaceChildren();
+    $("improvements-facts").hidden = true;
+    return;
+  }
+  note.hidden = imp.debt.length > 0;
+  note.textContent = "The package lists no improvements.";
+  const items = imp.debt.map((d) => {
+    const li = el("li", "debt-item type-" + d.type);
+    const head = el("div", "debt-head");
+    head.appendChild(el("span", "debt-type", d.type_label));
+    if (d.status) head.appendChild(el("span", "debt-status", d.status));
+    li.appendChild(head);
+    if (d.finding) li.appendChild(el("p", "debt-finding", d.finding));
+    if (d.artifact) {
+      const art = el("p", "debt-artifact");
+      const href = safeHref(d.url);
+      if (href) {
+        const a = el("a", "mono", d.artifact);
+        a.setAttribute("href", href);
+        a.setAttribute("target", "_blank");
+        a.setAttribute("rel", "noopener noreferrer");
+        art.appendChild(a);
+      } else {
+        art.appendChild(el("code", null, d.artifact));
+      }
+      li.appendChild(art);
+    }
+    if (d.evidence_refs && d.evidence_refs.length) li.appendChild(el("p", "debt-refs", "Evidence: " + d.evidence_refs.join(", ")));
+    if (d.residual_risk) li.appendChild(el("p", "debt-risk", "Residual risk: " + d.residual_risk));
+    return li;
+  });
+  $("debt").replaceChildren(...items);
+
+  const facts = [];
+  const add = (k, v) => { if (v) { facts.push(el("dt", null, k)); facts.push(el("dd", null, v)); } };
+  const next = imp.next_drill;
+  add("Next drill", next ? [next.scenario, next.reason].filter(Boolean).join(": ") : "not in this package yet");
+  (imp.residual_risks || []).forEach((r) => add("Residual risk", r));
+  add("Source", imp.source);
+  add("Contract", imp.contract_version);
+  if (imp.integrity && imp.integrity.sha256) add("Package sha256", imp.integrity.sha256 + "…");
+  const box = $("improvements-facts");
+  box.replaceChildren(...facts);
+  box.hidden = facts.length === 0;
 }
 
 function renderDecision(view) {
@@ -170,6 +270,7 @@ function render(view) {
   $("stub-badge").hidden = !view.stubbed;
   renderSplit(view);
   renderScorecard(view);
+  renderImprovements(view);
   renderDecision(view);
   renderLinks(view);
   renderFeed(view);
