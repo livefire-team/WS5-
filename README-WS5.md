@@ -46,7 +46,7 @@ python -m venv .venv
 source .venv/bin/activate              # Windows: .venv\Scripts\activate
 pip install -r src/control-center/requirements-dev.txt
 
-# 2. run the tests: all 24 should pass
+# 2. run the tests: all 53 should pass
 pytest -q src/control-center/tests
 
 # 3. start it on the sample drills
@@ -114,6 +114,47 @@ scripts/deploy-cc.sh all                           # secrets, image into the pri
   the bridge scripts and WS4's stub runner drive the deployed Control Center.
 - `scripts/metrics_bridge.py` is the G2 fallback for the business tiles until WS1's load generator writes
   `metrics.orders` itself.
+
+## G3: the rest of the scorecard, and the Improvements panel
+
+Merge after the G2 gate. Nothing changes for G2's checks: the new tiles show a dash until their events exist.
+
+- **New tiles:** Against target (met or missed), Durable improvements, Browser minutes, Twin lifetime, the
+  backlog's peak and whether it's draining, and Decision time shown as "Pre-authorized" in Autonomous Twin.
+  Failed orders now counts only from the fault to verified recovery, the same formula as WS4's scorecard.
+- **The target** comes from `target_recovery_s` on `drill.start` (WS4 contracts v1.1). Until WS4 sends it, the
+  team's agreed number can be set with `CC_TARGET_RECOVERY_S=<seconds> scripts/deploy-cc.sh deploy`; the tile
+  then says "team setting".
+- **The Improvements panel** reads WS4's sealed `<drill-id>/package.json` once `package.ready` is in the log.
+  It lists `operational_debt` and `next_drill_recommendation` (contract v1.1); with contract 1.0 it lists the
+  candidate fix, regression test and runbook from the change report. Artifacts link only into
+  `https://github.com/livefire-team/` (`ARTIFACT_LINK_PREFIX`); everything else is plain text.
+- **The seal check:** the screen re-computes the package's sha256 and WS4's `events_sha256` over the first
+  `events_count` events. Green means the package and the events it summarises are exactly what WS4 sealed;
+  red means one of them changed after sealing, so the package is not to be trusted.
+- **The sync** copies `package.json` to Blob byte for byte, before the `package.ready` event that announces it.
+- **Fixtures:** `drill-g2-stub-1107-run2`, WS4's stub runner clicked on the deployed app on Nov 7, with its package
+  (VERIFIED), and `drill-g2-stub-1107-run4`, stopped with the kill switch the same day (KILLED).
+- **WS3's denials (T-03, T-04):** every `planner.tool_call`, `engineer.tool_call` and `recovery.tool_call` reads as a
+  plain line and counts in the tool-call tile. A credential used on another role's endpoint reads "Cross-role call
+  refused" (T-03); a refused write such as a protected path reads "Engineer was denied apply_patch" (T-04); a
+  failed call is shown as failed, not as served.
+- **Who did what (the board):** one card for every step, so judges can see what each agent did. `app/board.py`
+  turns each event into a card that says who acted (Planner or Engineer agent, the incident commander, a guardrail,
+  an independent check or the Drill Runner), what they did in plain words, what they found, and how it ended
+  (Allowed, Refused, Passed, Failed, Decided). Token use is folded into the agent's answer; each decision is one card.
+  Three layouts from the same cards, switched with the buttons above the board without reloading:
+  **By phase** (the default: Break it, Diagnose, Decide and restore, Fix the code, Prove it), **By who** (one
+  column per actor) and **Grid** (actors down, phases across). `?board=people` or `?board=grid` in a link opens
+  that layout; nothing is remembered between visits, so the judges always start on By phase.
+- **Technical detail:** hidden on every visit; one click shows each card's event, tool, endpoint, caller,
+  decision, response ID, tokens, commits and image.
+- **Guardrails strip:** T-02 (broad access), T-03 (cross-role tool call) and T-04 (protected-path write), each
+  "Refused", "Not tried in this drill" or, in red, "NOT refused".
+- **Tiles in three groups** (Customers, Recovery, Guardrails and agents) plus a Run details row; an empty tile
+  says why, such as "no load generator ran for this drill".
+- **Evidence panel:** where the record is kept (storage account and container names only, or the local folder's
+  name), the files, the write rule and the seal.
 
 ## Where this differs from the build guide, and why
 

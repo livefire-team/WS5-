@@ -11,7 +11,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from starlette.applications import Starlette
 from starlette.datastructures import MutableHeaders
@@ -35,6 +35,7 @@ decision_lock = asyncio.Lock()  # one replica, so one lock makes each decision o
 
 KEEPALIVE_S = 15.0
 POLL_S = 0.5
+PACKAGE_RETRY_S = 3.0  # while package.ready is in the log but package.json isn't readable yet
 MIN_SPEED, MAX_SPEED = 1.0, 100.0
 
 
@@ -66,9 +67,35 @@ def page(request: Request, name: str, context: dict, status_code: int = 200):
     return response
 
 
+def evidence_where(source: str | None = None) -> dict:
+    """Where this screen reads drills from, for the Evidence panel. Names only: no keys, no full local paths."""
+    source = source or os.environ.get("EVENT_SOURCE", "dir:./evidence")
+    kind, _, target = source.partition(":")
+    if kind == "blob":
+        account_url, _, container = target.rstrip("/").rpartition("/")
+        host = urlparse(account_url).hostname or ""
+        return {"kind": "blob", "account": host.split(".")[0], "container": container}
+    return {"kind": "dir", "folder": Path(target.rstrip("/")).name or target}
+
+
+WHERE = evidence_where()
+
+
 def sse(view: dict, mode: str, speed: float | None) -> str:
-    view = {**view, "mode": mode, "speed": speed}
+    view = {**view, "mode": mode, "speed": speed, "where": WHERE}
     return f"data: {json.dumps(view)}\n\n"
+
+
+def _sealed(events: list[dict]) -> bool:
+    return any(e["action"] == "package.ready" and e["result"] == "ok" for e in events)
+
+
+async def read_package(drill_id: str, events: list[dict]) -> bytes | None:
+    """WS4's sealed package.json, read only once a package.ready event says it exists."""
+    if not _sealed(events):
+        return None
+    reader = getattr(store, "read_package", None)
+    return await asyncio.to_thread(reader, drill_id) if reader else None
 
 
 async def stream_events(drill_id: str, mode: str, speed: float, is_disconnected=None,
@@ -76,23 +103,32 @@ async def stream_events(drill_id: str, mode: str, speed: float, is_disconnected=
     """The full view after each new event; a comment line keeps quiet streams open through proxies."""
     if mode == "replay":
         recorded = await asyncio.to_thread(store.read, drill_id)
+        package = await read_package(drill_id, recorded)  # build_view uses it once the story reaches package.ready
         async for shown in replay(recorded, speed=speed):
             if is_disconnected and await is_disconnected():
                 return
-            yield sse(build_view(shown), "replay", speed)
+            yield sse(build_view(shown, package), "replay", speed)
         yield "event: end\ndata: {}\n\n"
         return
 
-    # Live: poll every half second (same as events.live), send the view whenever it grows.
+    # Live: poll every half second (same as events.live), send the view whenever it grows,
+    # and once more when the sealed package becomes readable (the sync may copy it a moment later).
     seen = -1
+    package = None
+    next_package_try = 0.0
     last_sent = time.monotonic()
     while True:
         if is_disconnected and await is_disconnected():
             return
         events = await asyncio.to_thread(store.read, drill_id)
-        if len(events) != seen:
+        package_arrived = False
+        if package is None and _sealed(events) and time.monotonic() >= next_package_try:
+            package = await read_package(drill_id, events)
+            package_arrived = package is not None
+            next_package_try = time.monotonic() + PACKAGE_RETRY_S
+        if len(events) != seen or package_arrived:
             seen = len(events)
-            yield sse(build_view(events), "live", None)
+            yield sse(build_view(events, package), "live", None)
             last_sent = time.monotonic()
         elif time.monotonic() - last_sent >= keepalive:
             yield ": keepalive\n\n"
@@ -135,7 +171,8 @@ async def drill_stream(request: Request):
 async def drill_view(request: Request):
     drill_id = drill_or_404(request.path_params["drill_id"])
     events = await asyncio.to_thread(store.read, drill_id)
-    return JSONResponse({"drill_id": drill_id, **build_view(events)})
+    package = await read_package(drill_id, events)
+    return JSONResponse({"drill_id": drill_id, **build_view(events, package), "where": WHERE})
 
 
 async def _json_body(request: Request) -> dict:

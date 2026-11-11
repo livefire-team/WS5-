@@ -27,6 +27,8 @@ from typing import AsyncIterator, Iterable
 DRILL_ID_RE = re.compile(r"^drill-[A-Za-z0-9-]{1,64}$")
 ACTION_RE = re.compile(r"^[a-z][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*$")
 EVENTS_FILE = "events.jsonl"
+PACKAGE_FILE = "package.json"      # WS4's sealed evidence package: written once, next to the events
+PACKAGE_MAX_BYTES = 1_000_000
 
 
 # ---------------------------------------------------------------- format and validation
@@ -134,6 +136,27 @@ class DirStore:
                 f.flush()
                 os.fsync(f.fileno())
 
+    def has_package(self, drill_id: str) -> bool:
+        return (self.root / validate_drill_id(drill_id) / PACKAGE_FILE).is_file()
+
+    def read_package(self, drill_id: str) -> bytes | None:
+        """The sealed package.json exactly as written (bytes, so its checksum can be checked), or None."""
+        path = self.root / validate_drill_id(drill_id) / PACKAGE_FILE
+        if not path.is_file() or path.stat().st_size > PACKAGE_MAX_BYTES:
+            return None
+        return path.read_bytes()
+
+    def write_package(self, drill_id: str, data: bytes) -> bool:
+        """Writes once, like WS4's runner; False if a package is already there."""
+        path = self.root / validate_drill_id(drill_id) / PACKAGE_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(path, "xb") as f:
+                f.write(data)
+        except FileExistsError:
+            return False
+        return True
+
 
 class BlobStore:
     """Events in Blob storage: append blob <drill-id>/events.jsonl, read with managed identity."""
@@ -177,6 +200,28 @@ class BlobStore:
         except ResourceExistsError:
             pass
         blob.append_block(encode(event))
+
+    def has_package(self, drill_id: str) -> bool:
+        return self._container.get_blob_client(f"{validate_drill_id(drill_id)}/{PACKAGE_FILE}").exists()
+
+    def read_package(self, drill_id: str) -> bytes | None:
+        from azure.core.exceptions import ResourceNotFoundError
+        blob = self._container.get_blob_client(f"{validate_drill_id(drill_id)}/{PACKAGE_FILE}")
+        try:
+            if blob.get_blob_properties().size > PACKAGE_MAX_BYTES:
+                return None
+            return blob.download_blob().readall()
+        except ResourceNotFoundError:
+            return None
+
+    def write_package(self, drill_id: str, data: bytes) -> bool:
+        from azure.core.exceptions import ResourceExistsError
+        blob = self._container.get_blob_client(f"{validate_drill_id(drill_id)}/{PACKAGE_FILE}")
+        try:
+            blob.upload_blob(data, overwrite=False)  # the evidence store's immutability keeps it as written
+        except ResourceExistsError:
+            return False
+        return True
 
 
 def store_from_env(source: str | None = None):
@@ -233,7 +278,8 @@ def sync_once(local, remote, drill_id: str, back_actions: Iterable[str] = BACK_A
     Up: every event in the local file that the remote store doesn't have yet (WS2's laptop scripts,
     WS4's stub runner and the bridge scripts write locally). Down: only the Control Center's own
     events (back_actions), so a script waiting on the local file sees the click made on the deployed app.
-    Events are compared whole, so it is safe to stop and restart at any time.
+    Events are compared whole, so it is safe to stop and restart at any time. WS4's sealed package.json
+    goes up too, once, byte for byte, so its checksum still matches on the deployed screen.
     """
     from collections import Counter
 
@@ -241,6 +287,11 @@ def sync_once(local, remote, drill_id: str, back_actions: Iterable[str] = BACK_A
     local_events, remote_events = local.read(drill_id), remote.read(drill_id)
     in_remote, in_local = Counter(map(_key, remote_events)), Counter(map(_key, local_events))
     up = down = 0
+    # the package first, as WS4 seals it: package.json, then the package.ready event that announces it
+    if any(e["action"] == "package.ready" for e in local_events) and not remote.has_package(drill_id):
+        package = local.read_package(drill_id)
+        if package is not None and remote.write_package(drill_id, package):
+            up += 1
     seen: Counter = Counter()
     for event in local_events:
         k = _key(event)

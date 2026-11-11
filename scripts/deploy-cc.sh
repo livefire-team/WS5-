@@ -19,7 +19,8 @@
 #
 # [sha] defaults to the last commit on origin/main that changed the Control Center: the tag CI pushed to GHCR.
 # Optional: GHCR_OWNER (default livefire-team), GHCR_USER and GHCR_TOKEN (only if the GHCR package is private),
-# CC_AUTH_MODE (passcode or easyauth), CC_ENTRA_CLIENT_ID (easyauth), CC_ALLOWED_IPS (comma-separated CIDRs).
+# CC_AUTH_MODE (passcode or easyauth), CC_ENTRA_CLIENT_ID (easyauth), CC_ALLOWED_IPS (comma-separated CIDRs),
+# CC_TARGET_RECOVERY_S (the team's recovery target in seconds, for drills that don't carry one; G3).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RG="${CONTROL_RG:?export CONTROL_RG=rg-lf-control-<azd env name> first}"
@@ -114,6 +115,7 @@ phase_deploy() {
     -p environmentId="$ENV_ID" image="$image" registryServer="$ACR_SERVER" pullIdentityId="$PULL_ID" \
        keyVaultName="$KV" evidenceAccountName="$EVIDENCE" authMode="$AUTH_MODE" \
        entraClientId="${CC_ENTRA_CLIENT_ID:-}" allowedIpRanges="$ips" \
+       targetRecoverySeconds="${CC_TARGET_RECOVERY_S:-0}" \
     --query properties.outputs.url.value -o tsv
 }
 

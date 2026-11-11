@@ -1,13 +1,20 @@
 """Events to stages, banner, split view, feed and scorecard.
 
-Everything on the drill screen is computed here by one pure function, build_view(events).
+Everything on the drill screen is computed here by one pure function, build_view(events, package).
 It has no I/O and no clock, so the whole screen is unit-testable and a reconnecting browser
 recovers by itself. The rules come from contracts/event-catalog.md, sections 6 and 7.
+
+G3 adds the rest of the business scorecard (blueprint 1.6) and the Improvements panel (2.2, 8),
+read from WS4's sealed evidence package. The package's two checksums are re-computed here, so the
+screen says whether the package and the events it summarises are still exactly what was sealed.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 
+from board import build_board
 from events import parse_ts
 
 STAGES = ["Baseline", "Fault", "Investigate", "Decide", "Restore",
@@ -34,6 +41,31 @@ def safe_link(url) -> str | None:
     if isinstance(url, str) and len(url) < 2048 and url.startswith(link_prefixes()):
         return url
     return None
+
+
+TOOL_CALLS = {"planner.tool_call": "Planner", "engineer.tool_call": "Engineer", "recovery.tool_call": "Recovery"}
+
+
+def artifact_prefix() -> str:
+    """Improvement artifacts link only into the team's own GitHub org: a stub's example.com or another
+    org's repository is shown as text, never as a link."""
+    return os.environ.get("ARTIFACT_LINK_PREFIX", "https://github.com/livefire-team/")
+
+
+def artifact_link(url) -> str | None:
+    if (isinstance(url, str) and len(url) < 2048 and url.startswith(artifact_prefix())
+            and url.startswith("https://") and not any(c.isspace() for c in url)):
+        return url
+    return None
+
+
+def default_target_s() -> float | None:
+    """The team's recovery target, used only when the drill doesn't carry one (WS4 contracts v1.1)."""
+    try:
+        value = float(os.environ.get("TARGET_RECOVERY_S", ""))
+    except ValueError:
+        return None
+    return value if 0 < value < 86400 else None
 
 
 def _num(value):
@@ -75,6 +107,9 @@ def _duration(start: str | None, end: str | None) -> float | None:
 # ---------------------------------------------------------------- stage mapping
 
 APPROVAL_STAGE = {"recovery": "Decide", "deploy": "Repair", "acceptance": "Evidence"}
+BOARD_TITLES = {"recovery": "Asked to choose: how to recover",
+                "deploy": "Asked: deploy the fix to the twin?",
+                "acceptance": "Asked: open a pull request for review?"}
 DECISION_TITLE = {"recovery": "Decision needed: how to recover",
                   "deploy": "Decision needed: deploy the candidate to the twin?",
                   "acceptance": "Decision needed: open the pull request for human review?"}
@@ -212,14 +247,23 @@ def _feed_line(event: dict) -> tuple[str, str]:
         if d.get("by") == "kill":
             return "Kill switch: the twin was reset to its baseline", "fail"
         return "Twin reset: access restored, revision rolled back, drill orders cleared", "info"
-    if a in ("planner.tool_call", "engineer.tool_call"):
-        who = "Planner" if a.startswith("planner") else "Engineer"
+    if a in TOOL_CALLS:
+        # WS3's MCP server writes one of these per tool call (contracts/mcp-contract.md, section 7)
+        who = TOOL_CALLS[a]
         tool = _text(d.get("tool") or "a tool", 80)
-        if r == "deny" or d.get("decision") == "deny":
-            where = f" on {_text(d.get('endpoint'), 40)}" if d.get("endpoint") else ""
-            why = f": {_text(d.get('summary'))}" if d.get("summary") else ""
-            return f"{who} was denied {tool}{where}{why}", "deny"
         why = f": {_text(d.get('summary'))}" if d.get("summary") else ""
+        decision = d.get("decision") or r
+        if decision == "deny":
+            caller = str(d.get("caller") or "")
+            endpoint = str(d.get("endpoint") or "")
+            caller_role = caller.split(":", 1)[1] if caller.startswith("key:") else ""
+            if caller_role and endpoint and caller_role != endpoint:  # T-03: a credential used on another endpoint
+                return (f"Cross-role call refused: the {_text(caller_role.title(), 20)} credential on the "
+                        f"{_text(endpoint.title(), 20)} tools ({tool}){why}"), "deny"
+            where = f" on the {_text(endpoint, 40)} tools" if endpoint else ""
+            return f"{who} was denied {tool}{where}{why}", "deny"
+        if decision == "error":
+            return f"{who}'s call to {tool} failed{why}", "fail"
         return f"{who} called {tool}{why}", "info"
     if a == "planner.options":
         labels = [o["label"] for o in _options(d)]
@@ -278,9 +322,125 @@ def _feed_link(event: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
+
+# ---------------------------------------------------------------- the sealed package and the Improvements panel
+
+PACKAGE_MAX_BYTES = 1_000_000
+DEBT_TYPES = {"application-resilience": "Application resilience", "regression-coverage": "Regression coverage",
+              "runbook": "Runbook", "knowledge": "Knowledge"}
+
+
+def _events_sha256(events: list[dict]) -> str:
+    """WS4's events_sha256: compact JSON of each event, one per line (livefire/evidence.py, build())."""
+    raw = "".join(json.dumps(e, separators=(",", ":")) + "\n" for e in events).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _strings(value, limit: int = 300, most: int = 10) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [_text(v, limit) for v in value[:most] if isinstance(v, (str, int, float)) and str(v).strip()]
+
+
+def _debt_item(kind, finding, artifact, status, evidence_refs=(), residual_risk=None, url=None) -> dict:
+    artifact = _text(artifact, 200) or None
+    return {"type": kind if kind in DEBT_TYPES else "knowledge",
+            "type_label": DEBT_TYPES.get(kind, _text(kind, 40) or "Knowledge"),
+            "finding": _text(finding, 400) or None, "artifact": artifact,
+            "url": artifact_link(url) or artifact_link(artifact), "status": _text(status, 120) or None,
+            "evidence_refs": [_text(r, 80) for r in evidence_refs][:6],
+            "residual_risk": _text(residual_risk, 300) or None}
+
+
+def _debt_from_contract_1_0(pkg: dict, verdict: str | None, pr_opened: bool, pr_url) -> list[dict]:
+    """WS4's contract 1.0 has no operational_debt list yet, so the panel lists what the package does hold:
+    the candidate fix, and the regression test and runbook its change report says it changed."""
+    cand = pkg.get("candidate") if isinstance(pkg.get("candidate"), dict) else {}
+    report = cand.get("change_report") if isinstance(cand.get("change_report"), dict) else {}
+    brief = pkg.get("brief") if isinstance(pkg.get("brief"), dict) else {}
+    if not cand.get("branch"):
+        return []
+    if pr_opened:
+        status = "pull request opened for review (unmerged)"
+    elif verdict == "VERIFIED":
+        status = "verified on the twin; no pull request yet"
+    else:
+        status = "not verified"
+    refs = []
+    for item in report.get("evidence_to_change") or []:
+        ref = item.get("evidence_ref") if isinstance(item, dict) else None
+        if isinstance(ref, str) and ref not in refs:
+            refs.append(ref)
+    items = [_debt_item("application-resilience", brief.get("required_behavior") or brief.get("supported_hypothesis"),
+                        cand.get("branch"), status, refs, url=pr_url or cand.get("ci_run"))]
+    if report.get("regression_test_path"):
+        items.append(_debt_item("regression-coverage", "Regression test added with the fix",
+                                report["regression_test_path"], status))
+    if report.get("runbook_path"):
+        items.append(_debt_item("runbook", "Runbook updated with the fix", report["runbook_path"], status))
+    return items
+
+
+def _improvements(drill_id: str | None, events: list[dict], package: bytes | None, verdict: str | None) -> dict:
+    ready = next((e for e in events if e["action"] == "package.ready" and e["result"] == "ok"), None)
+    panel = {"state": "waiting", "contract_version": None, "source": None, "integrity": None,
+             "debt": [], "next_drill": None, "residual_risks": []}
+    if ready is None:
+        return panel  # nothing sealed yet; in replay, the package appears when the story reaches it
+    if package is None:
+        return {**panel, "state": "loading"}
+    if len(package) > PACKAGE_MAX_BYTES:
+        return {**panel, "state": "unreadable"}
+    try:
+        pkg = json.loads(package.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return {**panel, "state": "unreadable"}
+    if not isinstance(pkg, dict):
+        return {**panel, "state": "unreadable"}
+
+    d = ready.get("details") or {}
+    sealed_sha = d.get("sha256")
+    count = pkg.get("events_count")
+    integrity = {
+        "package": (hashlib.sha256(package).hexdigest() == sealed_sha) if isinstance(sealed_sha, str) else None,
+        "same_drill": pkg.get("drill_id") == drill_id if drill_id else None,
+        "events": None,
+        "events_count": count if isinstance(count, int) else None,
+        "sha256": sealed_sha[:16] if isinstance(sealed_sha, str) else None,
+    }
+    if isinstance(count, int) and 0 < count <= len(events) and isinstance(pkg.get("events_sha256"), str):
+        integrity["events"] = _events_sha256(events[:count]) == pkg["events_sha256"]
+    integrity["ok"] = (integrity["package"] is True and integrity["same_drill"] is not False
+                       and integrity["events"] is not False)
+
+    pr = next((e for e in events if e["action"] == "package.pr"), None)
+    pr_opened = bool(pr and pr["result"] == "ok")
+    pr_url = (pr.get("details") or {}).get("pr_url") if pr else None
+
+    raw_debt = pkg.get("operational_debt")
+    if isinstance(raw_debt, list):  # WS4 contracts v1.1
+        debt = [_debt_item(i.get("type"), i.get("finding"), i.get("artifact"), i.get("status"),
+                           _strings(i.get("evidence_refs"), 80), i.get("residual_risk"))
+                for i in raw_debt[:12] if isinstance(i, dict)]
+        source = "WS4's operational-debt record"
+    else:
+        debt = _debt_from_contract_1_0(pkg, verdict, pr_opened, pr_url)
+        source = "the evidence package's change report (WS4 contract 1.0 has no debt record yet)"
+
+    nxt = pkg.get("next_drill_recommendation")
+    next_drill = None
+    if isinstance(nxt, dict) and (nxt.get("scenario") or nxt.get("reason")):
+        next_drill = {"scenario": _text(nxt.get("scenario"), 80) or None, "reason": _text(nxt.get("reason"), 300) or None}
+
+    return {"state": "sealed", "contract_version": _text(pkg.get("contract_version"), 16) or None,
+            "source": source, "integrity": integrity, "debt": debt, "next_drill": next_drill,
+            "residual_risks": _strings(pkg.get("residual_risks"))}
+
 # ---------------------------------------------------------------- the view
 
-def build_view(events: list[dict]) -> dict:
+def build_view(events: list[dict], package: bytes | None = None) -> dict:
+    """The whole drill screen. package is WS4's sealed package.json as stored (bytes), once it exists;
+    it is used only after the package.ready event, so a replay shows it when the story reaches it."""
     s = {"fault_seen": False, "restore_seen": False, "false_green_seen": False, "verdict_seen": False,
          "purposes": {}}
     visited: list[str] = []
@@ -305,10 +465,20 @@ def build_view(events: list[dict]) -> dict:
     cost = 0.0
     usage_seen = False
     metrics = None
+    # G3 scorecard (blueprint 1.6): target, drill economics, backlog peak, failed orders during the incident
+    mode = None
+    drill_target_s = None
+    started_ts = ended_ts = None
+    browser_s, browser_seen = 0.0, False
+    backlog_peak = None
+    failed_base = failed_end = None
+    preauthorized = 0
     requests: dict[str, dict] = {}
     decided: set[str] = set()
     links: list[dict] = []
     feed: list[dict] = []
+    card_stages: list[str | None] = []
+    metrics_seen = False
 
     for e in events:
         a, r, d, ts = e["action"], e["result"], e.get("details") or {}, e["ts"]
@@ -318,10 +488,39 @@ def build_view(events: list[dict]) -> dict:
             current = stage
             if stage not in visited:
                 visited.append(stage)
+        card_stages.append(stage or current)
 
         # state the stage rules depend on, updated after classifying this event
         if a == "drill.start" and _stubbed(d):
             stubbed = True
+
+        # G3 scorecard inputs; recovery_ts and verdict still hold their values from before this event
+        if a == "drill.start":
+            started_ts = started_ts or ts
+            mode = mode or (_text(d.get("mode"), 40) or None)
+            target = _num(d.get("target_recovery_s"))
+            if target and target > 0:
+                drill_target_s = float(target)
+        elif a == "drill.end":
+            ended_ts = ts
+        elif a.startswith("referee."):
+            secs = _num(d.get("duration_s"))
+            if secs is not None and secs >= 0:
+                browser_s += secs
+                browser_seen = True
+        elif a == "metrics.orders":
+            metrics_seen = True
+            peak = _num(d.get("backlog"))
+            if peak is not None:
+                backlog_peak = peak if backlog_peak is None else max(backlog_peak, peak)
+            failed = _num(d.get("failed_total"))
+            if failed is not None:
+                if not s["fault_seen"] or failed_base is None:
+                    failed_base = failed  # the last count before the fault, or the first one after it
+                if s["fault_seen"] and recovery_ts is None and verdict is None:
+                    failed_end = failed   # counted until verified recovery, or the verdict if it never came
+        elif a == "approval.preauthorized":
+            preauthorized += 1
         if a == "fault.inject":
             s["fault_seen"] = True
             first_fault_ts = first_fault_ts or ts
@@ -380,9 +579,9 @@ def build_view(events: list[dict]) -> dict:
             lat = _num(d.get("latency_s"))
             decisions += 1
             decision_time += lat or 0.0
-        elif a in ("planner.tool_call", "engineer.tool_call"):
+        elif a in TOOL_CALLS:
             tool_calls += 1
-            if r == "deny" or d.get("decision") == "deny":
+            if (d.get("decision") or r) == "deny":
                 tool_denials += 1
         elif a == "usage":
             usage_seen = True
@@ -439,8 +638,22 @@ def build_view(events: list[dict]) -> dict:
     if recovery_ts:
         recovered_by = "candidate fix" if deploy_before_recovery else "restart"
 
+    verified_s = _duration(first_fault_ts, recovery_ts)
+    target_s, target_source = (drill_target_s, "drill") if drill_target_s else (default_target_s(), "team setting")
+    if target_s is None:
+        target_source = None
+    if s["fault_seen"] and failed_base is not None and failed_end is not None:
+        failed_orders = max(failed_end - failed_base, 0)
+    elif metrics and _num(metrics.get("failed_total")) is not None:
+        failed_orders = 0 if not s["fault_seen"] else None
+    else:
+        failed_orders = None
+    backlog_now = _num(metrics.get("backlog")) if metrics else None
+    drill_id = events[0].get("drill_id") if events else None
+    improvements = _improvements(drill_id, events, package, verdict)
+
     scorecard = {
-        "verified_recovery_s": _duration(first_fault_ts, recovery_ts),
+        "verified_recovery_s": verified_s,
         "false_green_s": _duration(first_wait_ok_after_fault, recovery_ts) if after_restore_failed else None,
         "recovered_by": recovered_by,
         "policy_denials": denials if s["fault_seen"] or denials else None,
@@ -448,10 +661,22 @@ def build_view(events: list[dict]) -> dict:
         "tool_calls": tool_calls if tool_calls else None,
         "tool_denials": tool_denials if tool_calls else None,
         "orders_per_min": _num(metrics.get("orders_per_min")) if metrics else None,
-        "failed_orders": _num(metrics.get("failed_total")) if metrics else None,
-        "backlog": _num(metrics.get("backlog")) if metrics else None,
+        "failed_orders": failed_orders,
+        "backlog": backlog_now,
+        "backlog_peak": backlog_peak,
+        "backlog_draining": (backlog_now < backlog_peak) if backlog_now is not None and backlog_peak else None,
         "tokens": tokens if usage_seen else None,
         "est_cost_usd": round(cost, 2) if usage_seen else None,
+        "mode": mode,
+        "target_recovery_s": target_s,
+        "target_source": target_source,
+        "target_met": (verified_s <= target_s) if verified_s is not None and target_s else None,
+        "preauthorized": preauthorized or None,
+        "browser_minutes": round(browser_s / 60, 1) if browser_seen else None,
+        "twin_lifetime_s": _duration(started_ts, ended_ts),
+        "orders_seen": metrics_seen,
+        "durable_improvements": (sum(1 for i in improvements["debt"] if i["artifact"])
+                                 if improvements["state"] == "sealed" else None),
     }
 
     return {
@@ -468,5 +693,7 @@ def build_view(events: list[dict]) -> dict:
         "stubbed": stubbed,
         "ended": ended,
         "links": links,
+        "improvements": improvements,
         "feed": list(reversed(feed))[:FEED_LIMIT],
+        "board": build_board(events, card_stages, BOARD_TITLES, safe_link),
     }
