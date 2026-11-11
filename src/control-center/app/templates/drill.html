@@ -42,12 +42,47 @@
   <p id="decision-msg" class="decision-msg" role="alert"></p>
 </section>
 
-<section id="scorecard" class="scorecard" aria-label="Scorecard"></section>
+<section id="guardrails" class="guardrails" aria-label="Guardrail tests"></section>
+
+<section id="board-wrap" class="board-wrap" aria-labelledby="board-title">
+  <div class="board-head">
+    <div>
+      <h2 id="board-title">Who did what <small>every step of the drill, in order</small></h2>
+      <p id="board-summary" class="board-summary"></p>
+    </div>
+    <div class="board-tools">
+      <div id="board-switch" class="board-switch" role="group" aria-label="Board layout"></div>
+      <button id="tech-toggle" class="tech-toggle" type="button" aria-pressed="false">Show technical detail</button>
+    </div>
+  </div>
+  <ul id="board-legend" class="board-legend" aria-label="Who the colours stand for"></ul>
+  <div id="board" class="board"></div>
+</section>
+
+<section id="scorecard" class="scorecard-groups" aria-label="Scorecard"></section>
+<section id="run-details" class="run-details" aria-label="Run details"></section>
+
+<section id="improvements" class="improvements" aria-labelledby="improvements-title">
+  <div class="improvements-head">
+    <h2 id="improvements-title">Improvements <small>what this drill leaves behind</small></h2>
+  </div>
+  <p id="improvements-note" class="muted">Appears when WS4 seals the evidence package, at the end of the drill.</p>
+  <ul id="debt" class="debt"></ul>
+  <dl id="improvements-facts" class="facts" hidden></dl>
+</section>
+
+<section id="evidence" class="evidence" aria-labelledby="evidence-title">
+  <div class="improvements-head">
+    <h2 id="evidence-title">Evidence <small>where this drill's record is kept</small></h2>
+    <span id="seal" class="seal" hidden></span>
+  </div>
+  <dl id="evidence-facts" class="facts"></dl>
+</section>
 
 <section id="links" class="links" hidden></section>
 
 <section class="feed-wrap">
-  <h2>Activity</h2>
+  <h2>Event log <small>the raw record, newest first</small></h2>
   <ol id="feed" class="feed"></ol>
 </section>
 {% endblock %}
