@@ -178,7 +178,7 @@ def test_ws3_denials_t03_and_t04_read_plainly_and_count():
         ("info", "Planner called query_incident_telemetry"),
         ("deny", "Cross-role call refused: the Planner credential on the Engineer tools (apply_patch): "
                  "the planner credential can't call /engineer"),
-        ("deny", "Engineer was denied apply_patch on the engineer tools: referee/journeys/checkout.spec.ts is a protected path"),
+        ("deny", "Protected-path write refused: Engineer tried apply_patch: referee/journeys/checkout.spec.ts is a protected path"),
         ("deny", "Recovery was denied execute_recovery on the recovery tools: grant already used"),
         ("fail", "Engineer's call to get_ci_results failed: GitHub returned 502"),
     ]

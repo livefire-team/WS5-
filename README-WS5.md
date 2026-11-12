@@ -147,6 +147,12 @@ Merge after the G2 gate. Nothing changes for G2's checks: the new tiles show a d
   **By phase** (the default: Break it, Diagnose, Decide and restore, Fix the code, Prove it), **By who** (one
   column per actor) and **Grid** (actors down, phases across). `?board=people` or `?board=grid` in a link opens
   that layout; nothing is remembered between visits, so the judges always start on By phase.
+- **WS4's contract v1.1 and WS3's recorded refusals:** debt items by `kind`; `next_drill_recommendation` as text
+  (a leading `T-0x` becomes the scenario); `guardrail.blocked` (Prompt Shields refused a model call) as a purple
+  card; `approval.policy_test` (the Autonomous Twin trying the broad option on purpose) under Decide, never as a
+  human decision; `agent_kind: stub` marks a stub run; `ci.result`'s `checks` in the technical detail. A cross-role
+  refusal is T-03 whether the event names the other endpoint or only says so in its summary, as WS3's server
+  records it ("planner credential refused on /engineer"); a write to a protected path (`journeys/`) is T-04.
 - **Technical detail:** hidden on every visit; one click shows each card's event, tool, endpoint, caller,
   decision, response ID, tokens, commits and image.
 - **Guardrails strip:** T-02 (broad access), T-03 (cross-role tool call) and T-04 (protected-path write), each

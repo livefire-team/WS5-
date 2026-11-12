@@ -9,6 +9,8 @@ the browser can lay the same cards out by phase, by person or as a grid of both.
 """
 from __future__ import annotations
 
+import re
+
 PHASES = [
     {"id": "break", "name": "Break it", "stages": ["Baseline", "Fault"],
      "plain": "Check the shop works, then break it on purpose"},
@@ -83,14 +85,30 @@ def _caller_role(d: dict) -> str:
     return caller.split(":", 1)[1] if caller.startswith("key:") else ""
 
 
-def guardrail_kind(action: str, d: dict, result: str = "") -> str | None:
-    """T-03 when a credential is used on another role's endpoint, T-04 for any other refused write."""
-    if action not in AGENT_OF or (d.get("decision") or result) != "deny":
-        return None
+# WS3's server records a refused credential under the holder's role, with the endpoint it tried only in the summary
+# (src/mcp-server/app/main.py): "planner credential refused on /engineer".
+REFUSED_ON = re.compile(r"\b(planner|engineer|recovery) credential refused on /(planner|engineer|recovery)\b")
+
+
+def cross_role(d: dict) -> tuple[str, str] | None:
+    """(the credential's role, the endpoint it tried) when one role's credential was used on another's tools."""
+    m = REFUSED_ON.search(str(d.get("summary") or ""))
+    if m and m.group(1) != m.group(2):
+        return m.group(1), m.group(2)
     role, endpoint = _caller_role(d), str(d.get("endpoint") or "")
     if role and endpoint and role != endpoint:
+        return role, endpoint
+    return None
+
+
+def guardrail_kind(action: str, d: dict, result: str = "") -> str | None:
+    """T-03 for a cross-role call, T-04 for a write to a protected path (journeys/); None for any other refusal."""
+    if action not in AGENT_OF or (d.get("decision") or result) != "deny":
+        return None
+    if cross_role(d):
         return "T-03"
-    if endpoint == "engineer" or d.get("tool") in WRITE_TOOLS or d.get("path"):
+    if "protected path" in str(d.get("summary") or "") or str(d.get("path") or "").lstrip("/").startswith(
+            ("journeys/", "referee/journeys/")):
         return "T-04"
     return None
 
@@ -114,14 +132,15 @@ def _card_for(e: dict, stage: str | None, ctx: dict, safe_link) -> dict | None:
         lane, tool = AGENT_OF[a], _t(d.get("tool") or "a tool", 80)
         decision = d.get("decision") or r
         base = _tech(("tool", tool), ("endpoint", d.get("endpoint")), ("caller", d.get("caller")),
-                     ("decision", decision), ("path", d.get("path")), ("stubbed", "yes" if d.get("stub") else None))
+                     ("decision", decision), ("path", d.get("path")), ("evidence source", d.get("source")),
+                     ("tool version", d.get("tool_version")), ("stubbed", "yes" if d.get("stub") else None))
         if decision == "deny":
             kind = guardrail_kind(a, d, r)
             who = AGENT_NAME[lane]
             if kind == "T-03":
-                role = _caller_role(d).title()
+                holder, target = cross_role(d)
                 head = "Tool server refused a cross-role call"
-                found = f"The {role} credential tried the {str(d.get('endpoint')).title()} tool {tool}"
+                found = f"The {holder.title()} credential tried the {target.title()} tool {tool}"
             else:
                 head = "Tool server refused a protected write" if kind == "T-04" else "Tool server refused a call"
                 found = f"The {who} agent tried {tool}" + (f": {_t(d.get('summary'))}" if d.get("summary") else "")
@@ -167,7 +186,21 @@ def _card_for(e: dict, stage: str | None, ctx: dict, safe_link) -> dict | None:
         return None  # one card per decision: see build_board
     if a == "approval.preauthorized":
         return _card("person", f"Approved in advance by the {_t(d.get('mode') or 'drill', 40)} policy", "ok",
-                     _t(d.get("action")) or None, "No click needed", [event] + _tech(("action", d.get("action"))))
+                     _t(d.get("action")) or None, "No click needed",
+                     [event] + _tech(("action", d.get("action")), ("policy version", d.get("policy_version"))))
+    if a == "approval.policy_test":  # v1.1, Autonomous Twin: the workflow, not a person, tries the broad option
+        return _card("runner", "Tested the safety rule on purpose", "info",
+                     f"Asked for the broad option ({_t(d.get('action'), 120) or 'broad'}); Azure Policy must refuse it",
+                     None, [event] + _tech(("action", d.get("action")), ("mode", d.get("mode")),
+                                           ("policy version", d.get("policy_version"))))
+    if a == "guardrail.blocked":  # v1.1: Prompt Shields on the model deployment refused a call
+        agent = _t(d.get("agent") or "an", 20)
+        flt = _t(d.get("filter") or "a filter", 60).replace("_", " ")
+        return _card("guard", f"Prompt Shields blocked the {agent.title() if agent != 'an' else 'an'} agent's model call",
+                     "deny", f"Filter: {flt}. The drill stops for a security review", "Blocked",
+                     [event] + _tech(("agent", d.get("agent")), ("filter", d.get("filter")),
+                                     ("response_id", d.get("response_id"))),
+                     extra="Guardrail on the model itself, before any tool runs")
     if a == "kill.requested":
         return _card("person", "Pressed the kill switch", "fail", f"{_t(d.get('by') or 'Someone', 80)} stopped the drill",
                      "Stopped", [event] + _tech(("by", d.get("by")), ("method", d.get("method"))))
@@ -205,18 +238,24 @@ def _card_for(e: dict, stage: str | None, ctx: dict, safe_link) -> dict | None:
     if a == "ci.result":
         failed = ", ".join(_t(x, 40) for x in d.get("failed") or [])
         url = safe_link(d.get("run_url"))
-        tech = [event] + _tech(("branch", d.get("branch")), ("commit", _short(d.get("commit"))), ("failed", failed))
+        checks = d.get("checks") if isinstance(d.get("checks"), dict) else {}
+        tech = [event] + _tech(("branch", d.get("branch")), ("commit", _short(d.get("commit"))), ("failed", failed),
+                               ("checks", "; ".join(f"{_t(k, 40)}: {_t(v, 20)}" for k, v in list(checks.items())[:6])))
         if r == "pass":
             return _card("check", "Automated tests (CI) passed on the fix", "pass", None, "Passed", tech, url, "CI run")
         return _card("check", "Automated tests (CI) failed on the fix", "fail", failed or None, "Failed", tech, url, "CI run")
 
     # the Drill Runner and the Ops Service
     if a == "drill.start":
-        stub = " Stubbed: no Azure, no model." if d.get("agents", {}).get("planner") == "stub" or d.get("model_deployment") == "stub" else ""
+        agents = d.get("agents") if isinstance(d.get("agents"), dict) else {}
+        stubbed = (d.get("agent_kind") == "stub" or d.get("model_deployment") == "stub"
+                   or "stub" in [str(v) for v in agents.values()])
+        stub = " Stubbed: no Azure, no model." if stubbed else ""
         return _card("runner", "Drill started", "info",
                      f"{_t(d.get('mode') or 'Supervised', 40)} mode, scenario {_t(d.get('scenario') or '?', 40)}.{stub}",
                      None, [event] + _tech(("contract", d.get("contract_version")), ("runner", d.get("runner_version")),
-                                           ("model", d.get("model_deployment"))))
+                                           ("model", d.get("model_deployment")), ("agents", d.get("agent_kind")),
+                                           ("target", f"{d.get('target_recovery_s')} s" if d.get("target_recovery_s") else None)))
     if a == "fault.inject":
         if stage == "Verify":
             return _card("runner", "Broke it again, to prove the fix holds", "fail", None, None, [event])

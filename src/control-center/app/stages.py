@@ -13,8 +13,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 
-from board import build_board
+from board import build_board, cross_role, guardrail_kind
 from events import parse_ts
 
 STAGES = ["Baseline", "Fault", "Investigate", "Decide", "Restore",
@@ -94,7 +95,7 @@ def _options(details: dict) -> list[dict]:
 def _stubbed(details: dict) -> bool:
     """WS4's stub runner says so on drill.start; the screen must never pass it off as a live run."""
     agents = details.get("agents")
-    return details.get("model_deployment") == "stub" or (
+    return details.get("agent_kind") == "stub" or details.get("model_deployment") == "stub" or (
         isinstance(agents, dict) and "stub" in [str(v) for v in agents.values()])
 
 
@@ -254,12 +255,15 @@ def _feed_line(event: dict) -> tuple[str, str]:
         why = f": {_text(d.get('summary'))}" if d.get("summary") else ""
         decision = d.get("decision") or r
         if decision == "deny":
-            caller = str(d.get("caller") or "")
+            pair = cross_role(d)
+            if pair:  # T-03: one role's credential used on another role's tools
+                if " credential refused on /" in str(d.get("summary") or ""):
+                    why = ""  # WS3's own wording says the same thing again
+                return (f"Cross-role call refused: the {_text(pair[0].title(), 20)} credential on the "
+                        f"{_text(pair[1].title(), 20)} tools ({tool}){why}"), "deny"
+            if guardrail_kind(a, d, r) == "T-04":
+                return f"Protected-path write refused: {who} tried {tool}{why}", "deny"
             endpoint = str(d.get("endpoint") or "")
-            caller_role = caller.split(":", 1)[1] if caller.startswith("key:") else ""
-            if caller_role and endpoint and caller_role != endpoint:  # T-03: a credential used on another endpoint
-                return (f"Cross-role call refused: the {_text(caller_role.title(), 20)} credential on the "
-                        f"{_text(endpoint.title(), 20)} tools ({tool}){why}"), "deny"
             where = f" on the {_text(endpoint, 40)} tools" if endpoint else ""
             return f"{who} was denied {tool}{where}{why}", "deny"
         if decision == "error":
@@ -276,6 +280,14 @@ def _feed_line(event: dict) -> tuple[str, str]:
     if a == "approval.preauthorized":
         mode = _text(d.get("mode") or "drill", 40)
         return f"Pre-authorized by the {mode} policy: {_text(d.get('action') or 'action', 80)}", "info"
+    if a == "approval.policy_test":
+        what = _text(d.get("action") or "the broad option", 80)
+        return f"The workflow tested the safety rule on purpose: it asked for {what}, which Azure Policy must refuse", "info"
+    if a == "guardrail.blocked":
+        agent = _text(d.get("agent") or "an", 20)
+        flt = _text(d.get("filter") or "a filter", 60).replace("_", " ")
+        return (f"Prompt Shields blocked the {agent.title() if agent != 'an' else 'an'} agent's model call ({flt}); "
+                "the drill stops for a security review"), "deny"
     if a == "approval.decided" and (r == "timeout" or d.get("option_id") == "timeout"):
         return "Nobody decided in time; the workflow stops rather than guess", "fail"
     if a == "approval.decided":
@@ -419,7 +431,7 @@ def _improvements(drill_id: str | None, events: list[dict], package: bytes | Non
 
     raw_debt = pkg.get("operational_debt")
     if isinstance(raw_debt, list):  # WS4 contracts v1.1
-        debt = [_debt_item(i.get("type"), i.get("finding"), i.get("artifact"), i.get("status"),
+        debt = [_debt_item(i.get("kind") or i.get("type"), i.get("finding"), i.get("artifact"), i.get("status"),
                            _strings(i.get("evidence_refs"), 80), i.get("residual_risk"))
                 for i in raw_debt[:12] if isinstance(i, dict)]
         source = "WS4's operational-debt record"
@@ -431,6 +443,10 @@ def _improvements(drill_id: str | None, events: list[dict], package: bytes | Non
     next_drill = None
     if isinstance(nxt, dict) and (nxt.get("scenario") or nxt.get("reason")):
         next_drill = {"scenario": _text(nxt.get("scenario"), 80) or None, "reason": _text(nxt.get("reason"), 300) or None}
+    elif isinstance(nxt, str) and nxt.strip():  # WS4's contract v1.1: one sentence, often starting with the scenario
+        m = re.match(r"\s*(T-\d{2})\b[\s:.,-]*(.*)", nxt, re.S)
+        next_drill = ({"scenario": m.group(1), "reason": _text(m.group(2), 300) or None} if m
+                      else {"scenario": None, "reason": _text(nxt, 300)})
 
     return {"state": "sealed", "contract_version": _text(pkg.get("contract_version"), 16) or None,
             "source": source, "integrity": integrity, "debt": debt, "next_drill": next_drill,
