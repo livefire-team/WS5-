@@ -15,7 +15,7 @@ import json
 import os
 import re
 
-from board import build_board, cross_role, guardrail_kind
+from board import build_board, cross_role, guardrail_kind, output_check
 from events import parse_ts
 
 STAGES = ["Baseline", "Fault", "Investigate", "Decide", "Restore",
@@ -288,6 +288,12 @@ def _feed_line(event: dict) -> tuple[str, str]:
         flt = _text(d.get("filter") or "a filter", 60).replace("_", " ")
         return (f"Prompt Shields blocked the {agent.title() if agent != 'an' else 'an'} agent's model call ({flt}); "
                 "the drill stops for a security review"), "deny"
+    if a == "agent.output_invalid":  # v1.2
+        who, second, problems = output_check(d)
+        n = f" ({problems} problem{'s' if problems != 1 else ''})" if problems else ""
+        if second:
+            return f"The {who}'s answer still didn't follow the agreed format{n}; the drill stopped safely", "fail"
+        return f"The {who}'s answer didn't follow the agreed format{n}; the workflow sent it back to fix", "info"
     if a == "approval.decided" and (r == "timeout" or d.get("option_id") == "timeout"):
         return "Nobody decided in time; the workflow stops rather than guess", "fail"
     if a == "approval.decided":

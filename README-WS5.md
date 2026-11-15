@@ -31,8 +31,6 @@ infra/main.ws5-snippet.bicep        G3: the lines that add it to WS2's main.bice
 scripts/deploy-cc.sh                G2: secrets, image import, deploy and verify, on its own
 scripts/metrics_bridge.py           G2 fallback: business tiles from Application Insights
 .github/workflows/control-center.yml  tests on every PR, image to GHCR from main
-scripts/decide-and-recover.sh       G2 bridge: makes the decision buttons act before WS4 exists
-scripts/kill-watcher.sh             G2 bridge: makes the kill switch act before WS4 exists
 docs/walkthrough/                   deck corrections, run of show, presenter notes
 ```
 
