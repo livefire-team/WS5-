@@ -101,6 +101,17 @@ def cross_role(d: dict) -> tuple[str, str] | None:
     return None
 
 
+def output_check(d: dict) -> tuple[str, bool, int | None]:
+    """agent.output_invalid (v1.2): whose answer, whether it was the second (the drill then stops), how many problems."""
+    agent = str(d.get("agent") or "").lower()
+    who = AGENT_NAME.get(agent) or "agent"
+    attempt = _num(d.get("attempt"))
+    count = _num(d.get("error_count"))
+    if count is None and isinstance(d.get("errors"), list):
+        count = len(d["errors"])
+    return who, attempt is not None and attempt >= 2, int(count) if count is not None else None
+
+
 def guardrail_kind(action: str, d: dict, result: str = "") -> str | None:
     """T-03 for a cross-role call, T-04 for a write to a protected path (journeys/); None for any other refusal."""
     if action not in AGENT_OF or (d.get("decision") or result) != "deny":
@@ -201,6 +212,19 @@ def _card_for(e: dict, stage: str | None, ctx: dict, safe_link) -> dict | None:
                      [event] + _tech(("agent", d.get("agent")), ("filter", d.get("filter")),
                                      ("response_id", d.get("response_id"))),
                      extra="Guardrail on the model itself, before any tool runs")
+    if a == "agent.output_invalid":  # v1.2: the workflow checked an agent's answer against the agreed format
+        who, second, problems = output_check(d)
+        found = ("Wrong again, so the drill stopped safely rather than act on it" if second
+                 else "Sent back to the agent to fix")
+        if problems:
+            found += f" ({problems} problem{'s' if problems != 1 else ''})"
+        errors = [x for x in (d.get("errors") or []) if isinstance(x, dict)][:3]
+        return _card("runner", f"Checked the {who}'s answer: it didn't follow the agreed format",
+                     "fail" if second else "info", found, "Stopped" if second else "Sent back",
+                     [event] + _tech(("agent", d.get("agent")), ("attempt", d.get("attempt")), ("problems", problems),
+                                     ("first problems", "; ".join(f"{_t(x.get('loc'), 60)}: {_t(x.get('msg'), 80)}"
+                                                                  for x in errors)),
+                                     ("response_id", d.get("response_id"))))
     if a == "kill.requested":
         return _card("person", "Pressed the kill switch", "fail", f"{_t(d.get('by') or 'Someone', 80)} stopped the drill",
                      "Stopped", [event] + _tech(("by", d.get("by")), ("method", d.get("method"))))

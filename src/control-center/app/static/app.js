@@ -146,7 +146,6 @@ function renderScorecard(view) {
   $("run-details").replaceChildren(
     el("span", "run-details-title", "Run details"),
     fact("Model tokens", fmtNum(s.tokens)),
-    fact("Estimated cost", has(s.est_cost_usd) ? "$" + Number(s.est_cost_usd).toFixed(2) : "—"),
     fact("Browser minutes", fmtNum(s.browser_minutes, 1)),
     fact("Twin lifetime", fmtDuration(s.twin_lifetime_s)),
   );
